@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>収集データ一覧</title>
+    <style>
+        body { font-family: sans-serif; margin: 2em; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #f2f2f2; }
+    </style>
+</head>
+<body>
+    <h1>収集データ一覧</h1>
+    <table>
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>元の投稿URL</th>
+                <th>抽出データ</th>
+                <th>収集日時 (UTC)</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for post in posts %}
+            <tr>
+                <td>{{ post.id }}</td>
+                <td><a href="{{ post.source_url }}" target="_blank">リンク</a></td>
+                <td>{{ post.processed_data }}</td>
+                <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</body>
+</html>
