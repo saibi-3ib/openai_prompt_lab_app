@@ -6,21 +6,17 @@ from datetime import datetime, timezone
 
 load_dotenv()
 
-"""
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
+# Renderから提供されるDATABASE_URLが存在しない場合はエラーを出す
 if not DATABASE_URL:
-    # ローカル開発用に、DATABASE_URLが設定されていない場合の仮のURLを設定
-    DATABASE_URL = "postgresql://user:password@localhost/mydatabase"
-"""
-DATABASE_URL = os.environ.get('DATABASE_URL')
+    raise ValueError("DATABASE_URL environment variable is not set. Did you set it in Render?")
 
-if not DATABASE_URL:
-    # ローカル開発用に、SQLiteを使用する
-    DATABASE_URL = "sqlite:///./local_database.db"
+# 'psycopg'ドライバを明示的に使用するようにURLを書き換える
+engine = create_engine(DATABASE_URL.replace("postgresql://", "postgresql+psycopg://"))
 
-engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+
 Base = declarative_base()
 
 class CollectedPost(Base):
