@@ -37,3 +37,5 @@ if __name__ == "__main__":
     print("Initializing the database...")
     init_db()
     print("Database initialized.")
+
+    #/Users/30ryo/development/xbot_for_investors/models.py
