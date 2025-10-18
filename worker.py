@@ -44,8 +44,8 @@ def get_latest_posts(username, since_id=None):
         if since_id:
             params["since_id"] = since_id
         else:
-            # since_idがない場合は最新10件のみ取得
-            params["max_results"] = 10
+            # since_idがない場合は最新3件のみ取得
+            params["max_results"] = 3
         
         response = client_x.get_users_tweets(**params)
         return response.data if response.data else []
