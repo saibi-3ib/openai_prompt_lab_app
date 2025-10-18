@@ -5,6 +5,7 @@ import tweepy
 import openai
 from models import SessionLocal, CollectedPost
 from datetime import datetime, timezone
+import time
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -44,8 +45,8 @@ def get_latest_posts(username, since_id=None):
         if since_id:
             params["since_id"] = since_id
         else:
-            # since_idがない場合は最新3件のみ取得
-            params["max_results"] = 3
+            # since_idがない場合は最新10件のみ取得
+            params["max_results"] = 10
         
         response = client_x.get_users_tweets(**params)
         return response.data if response.data else []
@@ -99,9 +100,10 @@ def run_worker():
 
             #2. since_idを使って最新の投稿のみを取得
             new_posts = get_latest_posts(username, since_id=since_id)
-
             if not new_posts:
                 print(f"No new posts found for user: {username}")
+                # 次のユーザー処理まで少し待つ（API制限回避のため）
+                time.sleep(15)
                 continue
 
             #取得したポストはすべて新しいのでDB存在チェックは不要
@@ -131,6 +133,9 @@ def run_worker():
                 db.add(new_collected_post)
                 db.commit()
                 print(f"Saved post {post.id} to database.")
+
+            # 次のユーザー処理まで少し待つ（API制限回避のため）
+            time.sleep(15)
             
     except Exception as e:
         print(f"An error occurred during the DB operation: {e}")
