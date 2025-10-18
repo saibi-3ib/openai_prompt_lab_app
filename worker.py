@@ -148,7 +148,7 @@ def run_worker():
                     post_id=str(post.id),
                     posted_at=post.created_at,
                     original_text=post.text,
-                    processed_data=summary,
+                    ai_summary=summary,
                     source_url=f"https://x.com/{username}/status/{post.id}",
                     like_count=post.public_metrics.get("like_count", 0),
                     retweet_count=post.public_metrics.get("retweet_count", 0)

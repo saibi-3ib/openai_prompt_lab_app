@@ -39,7 +39,7 @@
                 <td>{{ post.like_count }}</td>
                 <td>{{ post.retweet_count }}</td>
                 <td class="original-text">{{ post.original_text }}</td>
-                <td class="summary-text">{{ post.processed_data }}</td>
+                <td class="summary-text">{{ post.ai_summary }}</td>
                 <td><a href="{{ post.source_url }}" target="_blank">Link</a></td>
                 <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M') if post.created_at else 'N/A' }}</td>
             </tr>

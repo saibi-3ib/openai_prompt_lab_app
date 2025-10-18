@@ -27,7 +27,7 @@ class CollectedPost(Base):
     post_id = Column(String, unique=True, index=True, nullable=False)
     posted_at = Column(DateTime, nullable=False) 
     original_text = Column(Text, nullable=False)
-    processed_data = Column(Text, nullable=True)
+    ai_summary = Column(Text, nullable=True)
     source_url = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     like_count = Column(Integer, default=0)    
