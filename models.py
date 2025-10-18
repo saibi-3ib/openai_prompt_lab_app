@@ -25,10 +25,13 @@ class CollectedPost(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, index=True, nullable=False)
     post_id = Column(String, unique=True, index=True, nullable=False)
+    posted_at = Column(DateTime, nullable=False) 
     original_text = Column(Text, nullable=False)
     processed_data = Column(Text, nullable=True)
     source_url = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    like_count = Column(Integer, default=0)    
+    retweet_count = Column(Integer, default=0) 
 
 def init_db():
     Base.metadata.create_all(bind=engine)

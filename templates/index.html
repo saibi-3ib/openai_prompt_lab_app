@@ -4,22 +4,29 @@
     <meta charset="UTF-8">
     <title>収集データ一覧</title>
     <style>
-        body { font-family: sans-serif; margin: 2em; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        body { font-family: sans-serif; margin: 1em; }
+        table { width: 100%; border-collapse: collapse; font-size: 0.9em; } /* フォントを少し小さく */
+        th, td { border: 1px solid #ddd; padding: 6px; text-align: left; vertical-align: top; } /* vertical-align を追加 */
         th { background-color: #f2f2f2; }
+        .original-text { max-width: 300px; word-wrap: break-word; } /* 幅を制限してテキストを折り返す */
+        .summary-text { max-width: 200px; word-wrap: break-word; }
     </style>
 </head>
 <body>
-    <h1>収集データ一覧</h1>
+    <h1>収集データ一覧 (全情報)</h1>
     <table>
         <thead>
             <tr>
-                <th>ID</th>
-                <th>ユーザー名</th>
-                <th>元の投稿URL</th>
-                <th>抽出データ</th>
-                <th>収集日時 (UTC)</th>
+                <th>DB ID</th>
+                <th>Username</th>
+                <th>Post ID</th>
+                <th>Posted At (UTC)</th>
+                <th>Likes</th>
+                <th>RTs</th>
+                <th>Original Text</th>
+                <th>AI Summary</th>
+                <th>Source URL</th>
+                <th>Collected At (UTC)</th>
             </tr>
         </thead>
         <tbody>
@@ -27,9 +34,14 @@
             <tr>
                 <td>{{ post.id }}</td>
                 <td>{{ post.username }}</td>
-                <td><a href="{{ post.source_url }}" target="_blank">リンク</a></td>
-                <td>{{ post.processed_data }}</td>
-                <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+                <td>{{ post.post_id }}</td>
+                <td>{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }}</td>
+                <td>{{ post.like_count }}</td>
+                <td>{{ post.retweet_count }}</td>
+                <td class="original-text">{{ post.original_text }}</td>
+                <td class="summary-text">{{ post.processed_data }}</td>
+                <td><a href="{{ post.source_url }}" target="_blank">Link</a></td>
+                <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M') if post.created_at else 'N/A' }}</td>
             </tr>
             {% endfor %}
         </tbody>

@@ -50,7 +50,8 @@ def get_latest_posts(username, since_id=None):
         params = {
             "id": user.id,
             "exclude": ["replies", "retweets"],
-            "max_results": 100
+            "max_results": 100,
+            "tweet_fields": ["created_at", "public_metrics"]
         } 
         if since_id:
             params["since_id"] = since_id
@@ -145,9 +146,12 @@ def run_worker():
                 new_collected_post = CollectedPost(
                     username=username,
                     post_id=str(post.id),
+                    posted_at=post.created_at,
                     original_text=post.text,
                     processed_data=summary,
-                    source_url=f"https://x.com/{username}/status/{post.id}"
+                    source_url=f"https://x.com/{username}/status/{post.id}",
+                    like_count=post.public_metrics.get("like_count", 0),
+                    retweet_count=post.public_metrics.get("retweet_count", 0)
                 )
                 db.add(new_collected_post)
                 db.commit()
