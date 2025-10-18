@@ -14,3 +14,4 @@ env/
 # dotenv
 .env
 .DS_Store
+local_database.db

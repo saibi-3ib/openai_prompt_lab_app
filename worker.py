@@ -15,6 +15,16 @@ X_BEARER_TOKEN = os.environ.get("X_BEARER_TOKEN")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 TARGET_X_USERNAMES_STR = os.environ.get("TARGET_X_USERNAMES")
 
+# 環境変数からの設定値の読み込みとデフォルト値の設定
+try:
+    SLEEP_TIME_SECONDS_BETWEEN_POSTS = int(os.environ.get("SLEEP_TIME_SECONDS_BETWEEN_POSTS", "2"))
+    SLEEP_TIME_SECONDS_BETWEEN_USER = int(os.environ.get("SLEEP_TIME_SECONDS_BETWEEN_USER", "15"))
+except ValueError:
+    # もし環境変数が整数に変換できない場合、デフォルト値を使用
+    print ("Invalid SLEEP_TIME_SECONDS_BETWEEN_USER value. Using default of 15 seconds.")
+    SLEEP_TIME_SECONDS_BETWEEN_POSTS = 2
+    SLEEP_TIME_SECONDS_BETWEEN_USER = 15
+
 if not all([X_BEARER_TOKEN, OPENAI_API_KEY, TARGET_X_USERNAMES_STR]):
     raise ValueError("必要な環境変数が.envに設定されていません。")
 
@@ -34,7 +44,7 @@ def get_latest_posts(username, since_id=None):
         user = client_x.get_user(username=username).data
         if not user:
             print(f"Error: User {username} not found.")
-            return []
+            return False, None
         
         # APIにわたすパラメータを動的に設定
         params = {
@@ -49,10 +59,10 @@ def get_latest_posts(username, since_id=None):
             params["max_results"] = 10
         
         response = client_x.get_users_tweets(**params)
-        return response.data if response.data else []
+        return True, response.data if response.data else []
     except Exception as e:
         print(f"Error fetching posts for {username}: {e}")
-        return []
+        return False, None
 
 def process_with_openai(text):
     """
@@ -98,12 +108,21 @@ def run_worker():
             latest_post_in_db = db.query(CollectedPost).filter(CollectedPost.username == username).order_by(CollectedPost.id.desc()).first()
             since_id = latest_post_in_db.post_id if latest_post_in_db else None
 
+            # ポスト取得成否判定変数
+            success, new_posts = get_latest_posts(username, since_id=since_id)
+
+            # ポスト取得失敗時の処理
+            if not success:
+                print(f"Failed to fetch posts for user: {username}. Skipping to next user.")
+                print("Waiting seconds before next user...")
+                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
+                continue
+            
             #2. since_idを使って最新の投稿のみを取得
-            new_posts = get_latest_posts(username, since_id=since_id)
             if not new_posts:
                 print(f"No new posts found for user: {username}")
-                # 次のユーザー処理まで少し待つ（API制限回避のため）
-                time.sleep(15)
+                print("Waiting seconds before next user...")
+                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
                 continue
 
             #取得したポストはすべて新しいのでDB存在チェックは不要
@@ -134,8 +153,13 @@ def run_worker():
                 db.commit()
                 print(f"Saved post {post.id} to database.")
 
+                # 投稿間で少し待つ（API制限回避のため）
+                print("Waiting seconds before next post...")
+                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_POSTS)
+
             # 次のユーザー処理まで少し待つ（API制限回避のため）
-            time.sleep(15)
+            print("Waiting seconds before next user...")
+            time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
             
     except Exception as e:
         print(f"An error occurred during the DB operation: {e}")
