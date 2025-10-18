@@ -23,6 +23,7 @@ class CollectedPost(Base):
     __tablename__ = "collected_posts"
 
     id = Column(Integer, primary_key=True, index=True)
+    username = Column(String, index=True, nullable=False)
     post_id = Column(String, unique=True, index=True, nullable=False)
     original_text = Column(Text, nullable=False)
     processed_data = Column(Text, nullable=True)
