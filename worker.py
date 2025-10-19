@@ -115,14 +115,14 @@ def run_worker():
             # ポスト取得失敗時の処理
             if not success:
                 print(f"Failed to fetch posts for user: {username}. Skipping to next user.")
-                print("Waiting seconds before next user...")
+                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
                 time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
                 continue
             
             #2. since_idを使って最新の投稿のみを取得
             if not new_posts:
                 print(f"No new posts found for user: {username}")
-                print("Waiting seconds before next user...")
+                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
                 time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
                 continue
 
@@ -158,11 +158,11 @@ def run_worker():
                 print(f"Saved post {post.id} to database.")
 
                 # 投稿間で少し待つ（API制限回避のため）
-                print("Waiting seconds before next post...")
+                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_POSTS} seconds before next post...")
                 time.sleep(SLEEP_TIME_SECONDS_BETWEEN_POSTS)
 
             # 次のユーザー処理まで少し待つ（API制限回避のため）
-            print("Waiting seconds before next user...")
+            print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
             time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
             
     except Exception as e:
