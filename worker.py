@@ -45,11 +45,15 @@ TARGET_USERNAMES = [username.strip() for username in TARGET_USERNAMES_STR.split(
 # client_x = tweepy.Client(X_BEARER_TOKEN)
 # client_openai = openai.OpenAI(api_key=OPENAI_API_KEY)
 
-def get_latest_posts_from_x(username, since_id=None):
+def get_latest_posts_from_x(client_x, username, since_id=None):
     """
     指定されたXユーザー名から最新の投稿を取得する。
     since_idが指定された場合、それ以降の投稿のみを取得する。
     """
+    if not client_x:
+        print("Error: X API client is not initialized.")
+        return False, None
+
     try:
         user = client_x.get_user(username=username).data
         if not user:

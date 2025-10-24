@@ -2,49 +2,134 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>収集データ一覧</title>
-    <style>
-        body { font-family: sans-serif; margin: 1em; }
-        table { width: 100%; border-collapse: collapse; font-size: 0.9em; } /* フォントを少し小さく */
-        th, td { border: 1px solid #ddd; padding: 6px; text-align: left; vertical-align: top; } /* vertical-align を追加 */
-        th { background-color: #f2f2f2; }
-        .original-text { max-width: 300px; word-wrap: break-word; } /* 幅を制限してテキストを折り返す */
-        .summary-text { max-width: 200px; word-wrap: break-word; }
-    </style>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Investor Post Collector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
 </head>
-<body>
-    <h1>収集データ一覧 (全情報)</h1>
-    <table>
-        <thead>
-            <tr>
-                <th>DB ID</th>
-                <th>Username</th>
-                <th>Post ID</th>
-                <th>Posted At (UTC)</th>
-                <th>Likes</th>
-                <th>RTs</th>
-                <th>Original Text</th>
-                <th>AI Summary</th>
-                <th>Source URL</th>
-                <th>Collected At (UTC)</th>
-            </tr>
-        </thead>
-        <tbody>
+<body class="bg-gray-900 text-white font-sans">
+
+    <!-- ヘッダー -->
+    <header class="bg-gray-800 shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-white">Investor Post Collector</h1>
+            <div class="flex items-center space-x-4">
+                <span class="text-sm text-gray-400">Worker Provider: <span class="font-bold text-yellow-400">{{ current_provider }}</span></span>
+                <a href="/manage" class="text-blue-400 hover:text-blue-300 transition duration-200">⚙️ 設定管理へ</a>
+            </div>
+        </nav>
+    </header>
+
+    <!-- メインコンテンツ -->
+    <main class="container mx-auto px-6 py-8">
+        
+        <h2 class="text-xl font-semibold mb-6">最新の収集データ</h2>
+
+        <!-- ポストのリスト -->
+        <div class="space-y-6">
+            
             {% for post in posts %}
-            <tr>
-                <td>{{ post.id }}</td>
-                <td>{{ post.username }}</td>
-                <td>{{ post.post_id }}</td>
-                <td>{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }}</td>
-                <td>{{ post.like_count }}</td>
-                <td>{{ post.retweet_count }}</td>
-                <td class="original-text">{{ post.original_text }}</td>
-                <td class="summary-text">{{ post.ai_summary }}</td>
-                <td><a href="{{ post.source_url }}" target="_blank">Link</a></td>
-                <td>{{ post.created_at.strftime('%Y-%m-%d %H:%M') if post.created_at else 'N/A' }}</td>
-            </tr>
+            <div id="post-{{ post.id }}" class="bg-gray-800 rounded-lg shadow-xl p-6 border border-gray-700 hover:bg-gray-700 transition duration-300">
+                
+                <!-- 投稿ヘッダー：ユーザー名と投稿日時 -->
+                <div class="flex justify-between items-center mb-4">
+                    <p class="font-bold text-lg text-blue-400">{{ post.username }}</p>
+                    <span class="text-sm text-gray-400">{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }} (UTC)</span>
+                </div>
+
+                <!-- AI要約ステータスとアクション -->
+                <div class="mb-4">
+                    <p class="font-semibold text-gray-100 mb-2">AI要約:</p>
+                    <div id="summary-content-{{ post.id }}">
+                        {% if post.ai_summary %}
+                            <!-- 分析完了 -->
+                            <p class="text-gray-300 bg-green-900/30 p-3 rounded border border-green-700/50">{{ post.ai_summary }}</p>
+                        {% else %}
+                            <!-- 未分析 / アクションボタン -->
+                            <button onclick="analyzePost('{{ post.id }}')" 
+                                    class="analyze-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition duration-200"
+                                    data-post-id="{{ post.id }}">
+                                🤖 AI分析を実行 (約10秒)
+                            </button>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <!-- 元のテキスト -->
+                <div class="mb-4 p-3 bg-gray-900 rounded">
+                    <p class="text-sm text-gray-400 italic">"{{ post.original_text }}"</p>
+                </div>
+
+                <!-- 投稿フッター：いいね、RT、ソースへのリンク -->
+                <div class="flex justify-between items-center text-sm text-gray-400">
+                    <div class="flex space-x-4">
+                        <span>❤️ いいね: {{ post.like_count }}</span>
+                        <span>🔁 RT: {{ post.retweet_count }}</span>
+                        {% if post.link_summary %}
+                            <span class="text-yellow-500">🔗 リンク分析済</span>
+                        {% endif %}
+                    </div>
+                    <a href="{{ post.source_url }}" target="_blank" class="text-blue-400 hover:underline">元の投稿を見る &rarr;</a>
+                </div>
+            </div>
             {% endfor %}
-        </tbody>
-    </table>
+            <!-- ▲▲▲ ループここまで ▲▲▲ -->
+
+        </div>
+
+    </main>
+
+    <!-- JavaScript for API Calls -->
+    <script>
+        // ポストIDを受け取り、AI分析APIを呼び出す関数
+        async function analyzePost(postId) {
+            const button = document.querySelector(`.analyze-btn[data-post-id="${postId}"]`);
+            const summaryContainer = document.getElementById(`summary-content-${postId}`);
+            
+            // ボタンのステータス変更
+            const originalText = button.textContent;
+            button.disabled = true;
+            button.textContent = '⏱️ 分析中... (しばらくお待ちください)';
+            button.classList.remove('bg-indigo-600');
+            button.classList.add('bg-yellow-600');
+
+            try {
+                // FlaskのanalyzeルートにPOSTリクエストを送信
+                const response = await fetch(`/analyze/${postId}`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    // 成功した場合
+                    summaryContainer.innerHTML = `
+                        <p class="text-gray-300 bg-green-900/30 p-3 rounded border border-green-700/50">
+                            ${result.summary}
+                        </p>
+                    `;
+                } else {
+                    // 失敗した場合
+                    alert('分析に失敗しました: ' + result.message); // エラーメッセージを表示
+                    summaryContainer.innerHTML = `
+                        <p class="text-red-400 bg-red-900/30 p-3 rounded border border-red-700/50">
+                            分析失敗: ${result.message || '不明なエラー'}
+                        </p>
+                    `;
+                }
+
+            } catch (error) {
+                // 通信自体が失敗した場合
+                console.error('Fetch error:', error);
+                summaryContainer.innerHTML = `
+                    <p class="text-red-400 bg-red-900/30 p-3 rounded border border-red-700/50">
+                        通信エラーが発生しました。コンソールを確認してください。
+                    </p>
+                `;
+            }
+        }
+    </script>
 </body>
 </html>

@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>設定管理</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white font-sans">
+
+    <header class="bg-gray-800 shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-white">設定管理</h1>
+            <a href="/" class="text-blue-400 hover:text-blue-300">← ダッシュボードに戻る</a>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-8">
+
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-blue-400">Worker APIプロバイダー切り替え</h2>
+            <form method="POST" class="space-y-4">
+                <div class="space-y-2">
+                    <label class="block text-gray-400">現在: 
+                        <span class="font-bold text-lg text-white">{{ current_provider }}</span></label>
+
+                    <div class="flex items-center space-x-6">
+                        <label class="flex items-center space-x-2">
+                            <input type="radio" name="api_provider" value="X" 
+                                   class="form-radio text-blue-500 bg-gray-700 border-gray-600 focus:ring-blue-500" 
+                                   {% if current_provider == 'X' %}checked{% endif %}>
+                            <span class="text-white">X API</span>
+                        </label>
+                        <label class="flex items-center space-x-2">
+                            <input type="radio" name="api_provider" value="Threads" 
+                                   class="form-radio text-blue-500 bg-gray-700 border-gray-600 focus:ring-blue-500" 
+                                   {% if current_provider == 'THREADS' %}checked{% endif %}>
+                            <span class="text-white">Threads API</span>
+                        </label>
+                    </div>
+                </div>
+                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-200">
+                    プロバイダーを保存
+                </button>
+            </form>
+        </div>
+
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-green-400">AI要約プロンプト編集</h2>
+            <p class="text-gray-400 mb-4 text-sm">
+                投稿内容の要約に使用するプロンプトを編集します。**{text}** の部分は、Workerが収集した元のテキストに置き換えられます。
+            </p>
+            <form method="POST" class="space-y-4">
+                <textarea name="prompt_text" rows="10" 
+                          class="w-full p-3 bg-gray-900 border border-gray-700 rounded text-gray-300 focus:ring-green-500 focus:border-green-500" 
+                          required>{{ default_prompt }}</textarea>
+                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-200">
+                    プロンプトを保存
+                </button>
+            </form>
+        </div>
+
+    </main>
+
+</body>
+</html>
