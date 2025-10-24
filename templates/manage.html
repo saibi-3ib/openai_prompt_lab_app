@@ -39,7 +39,7 @@
                         </label>
                     </div>
                 </div>
-                <button type="submit" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-200">
+                <button type="submit" name="action" value="save_provider" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded transition duration-200">
                     プロバイダーを保存
                 </button>
             </form>
@@ -54,7 +54,7 @@
                 <textarea name="prompt_text" rows="10" 
                           class="w-full p-3 bg-gray-900 border border-gray-700 rounded text-gray-300 focus:ring-green-500 focus:border-green-500" 
                           required>{{ default_prompt }}</textarea>
-                <button type="submit" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-200">
+                <button type="submit" name="action" value="save_prompt" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-200">
                     プロンプトを保存
                 </button>
             </form>

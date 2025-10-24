@@ -66,25 +66,37 @@ def manage():
     try:
         # POST処理: APIプロバイダーの切り替え
         if request.method == 'POST':
-            provider = request.form.get('api_provider')
-            prompt_text = request.form.get('prompt_text')
+            action = request.form.get('action') # 追加: どのアクションか識別
+            print(f"Form action: {action}")  # デバッグ用ログ
 
             # 1. APIプロバイダーの切り替え処理
-            if provider in ['X', 'THREADS']:
-                setting = db.query(Setting).filter(Setting.key == 'api_provider').first()
-                if setting:
-                    setting.value = provider
+            if action == 'save_provider' :
+                provider = request.form.get('api_provider')
+                print(f"Selected provider: {provider}")  # デバッグ用ログ
+
+                if provider in ['X', 'Threads']:
+                    setting = db.query(Setting).filter(Setting.key == 'api_provider').first()
+                    if setting:
+                        setting.value = provider
+                    else:
+                        new_setting = Setting(key='api_provider', value=provider)
+                        db.add(new_setting)
+                    db.commit()
+                    print(f"debug: commit successful for provider {provider}")  # デバッグ用ログ
                 else:
-                    new_setting = Setting(key='api_provider', value=provider)
-                    db.add(new_setting)
-                db.commit()
+                    print(f"Invalid provider selected: {provider}")  # デバッグ用ログ
 
             # 2. プロンプトの編集処理
-            if prompt_text:
-                prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
-                if prompt:
-                    prompt.template_text = prompt_text
-                    db.commit()
+            elif action == 'save_prompt':
+                prompt_text = request.form.get('prompt_text')
+
+                if prompt_text:
+                    prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
+                    if prompt:
+                        prompt.template_text = prompt_text
+                        db.commit()
+                        print(f"debug: commit successful for provider {prompt}")  # デバッグ用ログ
+                        
 
             return redirect(url_for('manage')) # 処理後にリダイレクト
 
@@ -102,6 +114,7 @@ def manage():
 @app.route('/analyze/<int:post_id>', methods=['POST'])
 def analyze_post(post_id):
     if not client_openai:
+        # DB接続を試みる前のエラーハンドリングでリソース節約
         return jsonify({"status": "error", "message": "OpenAI API Key not configured."}), 400
 
     db = SessionLocal()
@@ -110,9 +123,11 @@ def analyze_post(post_id):
         if not post:
             return jsonify({"status": "error", "message": "Post not found."}), 404
 
+        # dbから現在のプロンプトテンプレートを取得
         current_prompt = get_current_prompt(db)
         
         # プロンプトテンプレートに元のテキストを挿入
+        # {text} を元の投稿テキストで置換
         full_prompt = current_prompt.template_text.replace("{text}", post.original_text)
 
         # AI呼び出しのロジックをここに記述
@@ -126,6 +141,7 @@ def analyze_post(post_id):
         )
         ai_result_str = response.choices[0].message.content
 
+        # JSON文字列をパース
         ai_result_json = json.loads(ai_result_str)
         summary = ai_result_json.get("summary", "Summary not available.")
 
@@ -137,6 +153,8 @@ def analyze_post(post_id):
 
     except Exception as e:
         db.rollback()
+        error_msg = f"AI分析処理中にエラーが発生しました: {str(e)}"
+        print(error_msg)
         return jsonify({"status": "error", "message": f"AI analysis failed: {str(e)}"}), 500
     finally:
         db.close()

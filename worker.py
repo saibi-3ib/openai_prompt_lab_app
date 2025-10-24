@@ -95,8 +95,11 @@ def get_latest_posts_from_threads(user_id, since_timestamp=None):
     params = {
         "access_token": THREADS_ACCESS_TOKEN,
         # 取得したいフィールドを指定
-        "fields": "id,text,timestamp,permalink,like_count,reply_count,reshare_count",
+        "fields": "id,media_product_type,text,timestamp,permalink,like_count,reply_count,reshare_count",
+        "limit": 25 # 一度に取得するスレッドの数(APIの推奨値)
     }
+
+    
     # since_timestampがある場合は追加
     if since_timestamp:
         params["since"] = since_timestamp
@@ -140,8 +143,9 @@ def run_worker():
 
         # APIプロバイダーに応じた設定
         if API_PROVIER == "X":
-            # client_xの初期化
+            # client_xをここで初期化
             client_x = tweepy.Client(X_BEARER_TOKEN) if X_BEARER_TOKEN else None
+
             if not client_x or not TARGET_USERNAMES:
                 print("X API client or target usernames not properly configured. Skipping X")
                 return
@@ -168,7 +172,10 @@ def run_worker():
             latest_post_in_db = db.query(CollectedPost).filter(CollectedPost.username == username_to_process).order_by(CollectedPost.id.desc()).first()
             since_value = get_since_value(latest_post_in_db)
 
-            success, raw_posts = fetch_function(target, since_value)
+            if API_PROVIER == "X":
+                success, raw_posts = fetch_function(client_x, target, since_id=since_value)
+            elif API_PROVIER == "Threads":
+                success, raw_posts = fetch_function(target, since_value)
 
             if not success:
                 print(f"Failed to fetch posts for user: {target}. Skipping.")
@@ -186,29 +193,29 @@ def run_worker():
                     post_text_preview = normalized_data.get("text", "")[:30]
                     print(f"Processing new post: {post_id_to_print} - {post_text_preview}...")
 
-                new_collected_post = CollectedPost(
-                    username=normalized_data["username"],
-                    post_id=normalized_data["post_id"],
-                    original_text=normalized_data["text"],
-                    # ai_summaryは常にNoneで保存。webappで後処理する仕様に変更
-                    ai_summary=None,
-                    link_summary=None,
-                    source_url=normalized_data["source_url"],
-                    posted_at=normalized_data["posted_at"],
-                    like_count=normalized_data["like_count"],
-                    retweet_count=normalized_data["retweet_count"]
-                )
-                db.add(new_collected_post)
-                db.commit()
-                print(f"Saved post {normalized_data['post_id']} to database.")
-                
-                # 投稿間で少し待つ（API制限回避のため）
-                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_POSTS} seconds before next post...")
-                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_POSTS)
+                    new_collected_post = CollectedPost(
+                        username=normalized_data["username"],
+                        post_id=normalized_data["post_id"],
+                        original_text=normalized_data["text"],
+                        # ai_summaryは常にNoneで保存。webappで後処理する仕様に変更
+                        ai_summary=None,
+                        link_summary=None,
+                        source_url=normalized_data["source_url"],
+                        posted_at=normalized_data["posted_at"],
+                        like_count=normalized_data["like_count"],
+                        retweet_count=normalized_data["retweet_count"]
+                    )
+                    db.add(new_collected_post)
+                    db.commit()
+                    print(f"Saved post {normalized_data['post_id']} to database.")
 
-            # ユーザー間で少し待つ（API制限回避のため）
-            print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
-            time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
+                    # 投稿間で少し待つ（API制限回避のため）
+                    print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_POSTS} seconds before next post...")
+                    time.sleep(SLEEP_TIME_SECONDS_BETWEEN_POSTS)
+
+                # ユーザー間で少し待つ（API制限回避のため）
+                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
+                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
 
     except Exception as e:
         print(f"An error occurred during the DB operation: {e}")
