@@ -14,6 +14,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# プロジェクトのルートディレクトリへの絶対パスを取得
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+#.envファイルからデータベースURLを取得、もしくはデフォルトの'app.db'を使用
+DB_NAME = os.environ.get("DB_FILENAME", "app.db")
+# 絶対パスのデータベースURLを構築
+DYNAMIC_DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, DB_NAME)}"
+print(f"--- [alembic/env.py] Connecting to database at: {DYNAMIC_DATABASE_URL} ---") # デバッグ用出力
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
@@ -65,7 +73,9 @@ def run_migrations_online() -> None:
     """
     # 接続情報を環境変数から取得して設定
     configuration = config.get_section(config.config_ini_section)
-    configuration["sqlalchemy.url"] = os.environ.get('DATABASE_URL').replace("postgresql://", "postgresql+psycopg://")
+
+    # 動的に組み立てたデータベースURLを使用
+    configuration["sqlalchemy.url"] = DYNAMIC_DATABASE_URL 
 
     connectable = engine_from_config(
         configuration,

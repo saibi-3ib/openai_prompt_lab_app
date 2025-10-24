@@ -2,7 +2,7 @@ import os
 import json
 import requests # API呼び出しのため追加
 from flask import Flask, render_template, request, redirect, url_for, jsonify
-from models import SessionLocal, CollectedPost, Setting, Prompt # 新しいモデルをインポート
+from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult # 新しいモデルをインポート
 from datetime import datetime, timezone
 import openai
 from dotenv import load_dotenv
@@ -145,10 +145,25 @@ def analyze_post(post_id):
         ai_result_json = json.loads(ai_result_str)
         summary = ai_result_json.get("summary", "Summary not available.")
 
-        # データベースを更新
+        # 新しいAnalysisResultレコードを作成
+        new_result = AnalysisResult(
+            prompt_id = current_prompt.id,
+            raw_json_response = ai_result_str,
+            extracted_summary = summary
+            # 将来的に必要に応じて他のフィールドも追加(センチメント分析など)
+            # extracted_sentiment = ai_result_json.get("sentiment")
+        )
+
+        # どの投稿を使ったかを関連付ける(多対多のリンク)
+        new_result.posts.append(post)
+
+        # UIの互換性のため、古いカラムにも一時的にサマリーを保存
         post.ai_summary = summary
-        db.commit()
-        
+
+        # データベースを更新
+        db.add(new_result)
+        db.commit()        
+
         return jsonify({"status": "success", "summary": summary})
 
     except Exception as e:
