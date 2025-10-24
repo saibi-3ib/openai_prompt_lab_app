@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from dateutil.parser import parse
 import time
 import requests
+from sqlalchemy.exc import IntegrityError
 
 # .envファイルから環境変数を読み込む
 load_dotenv()
@@ -95,24 +96,43 @@ def get_latest_posts_from_threads(user_id, since_timestamp=None):
     params = {
         "access_token": THREADS_ACCESS_TOKEN,
         # 取得したいフィールドを指定
-        "fields": "id,media_product_type,text,timestamp,permalink,like_count,reply_count,reshare_count",
+        "fields": "id,text,timestamp,permalink,like_count,reshare_count",
         "limit": 25 # 一度に取得するスレッドの数(APIの推奨値)
     }
-
-    
-    # since_timestampがある場合は追加
-    if since_timestamp:
-        params["since"] = since_timestamp
-
+        
     try:
         # GETリクエストを送信
         response = requests.get(endpoint, params=params)
         response.raise_for_status()  # HTTPエラーが発生した場合に例外をスロー
 
-        # レスポンスのJSONから'data'キーの値を取得
-        data = response.json().get("data", [])
-        print(f"Fetched {len(data)} threads for user ID {user_id}.")
-        return True, data
+        response_json = response.json()
+
+        # レスポンスのJSONから'data'キーの値を取得        
+        raw_posts = response_json.get("data", [])
+
+        print(f"Fetched {len(raw_posts)} threads for user ID {user_id}.")
+
+        # since_timestampが指定されている場合、フィルタリングを行う
+        if since_timestamp:
+            filter_dt = datetime.fromtimestamp(since_timestamp, tz=timezone.utc)
+            filtered_posts = []
+
+            for post in raw_posts:
+                post_timestamp_str = post.get("timestamp")
+                if post_timestamp_str:
+                    try:
+                        post_dt = parse(post_timestamp_str)
+                        if post_dt > filter_dt:
+                            filtered_posts.append(post)
+                    except ValueError:
+                        print(f"Warning: Invalid timestamp format in post ID {post.get('id','N/A')}: {post_timestamp_str}, Skipping time filter for this post.")
+            print(f"Filtered {len(raw_posts) - len(filtered_posts)} posts older than since_timestamp.")
+
+            # フィルタリング後の投稿を返す
+            return True, filtered_posts
+
+        # since_timestampがない場合は全件返す
+        return True, raw_posts
     
     except requests.exceptions.RequestException as e:
         print(f"Error fetching threads for user ID {user_id}: {e}")
@@ -121,9 +141,17 @@ def get_latest_posts_from_threads(user_id, since_timestamp=None):
         if hasattr(e, 'response') and e.response is not None:
             print(f"Response status code: {e.response.status_code}")
             try:
-                print(f"Response content: {e.response.json()}")
+                error_json = e.response.json()
+
+                error_msg = error_json.get('error', {}).get('message', 'No error message in response.')   
+                error_code = error_json.get('error', {}).get('code', 'No error code in response.')
+         
+                print(f"Response Error code: {error_code}, message: {error_msg}")
+                print(f"Response content: {error_json}")
+
             except json.JSONDecodeError:
-                print(f"Response content is not valid JSON: {e.response.text}")
+                print(f"Response content is not valid JSON:")
+                print(e.response.text)
         return False, None
 
 def run_worker():
@@ -205,9 +233,22 @@ def run_worker():
                         like_count=normalized_data["like_count"],
                         retweet_count=normalized_data["retweet_count"]
                     )
-                    db.add(new_collected_post)
-                    db.commit()
-                    print(f"Saved post {normalized_data['post_id']} to database.")
+
+                    try:
+                        db.add(new_collected_post)
+                        db.commit()
+                        print(f"Saved post {normalized_data['post_id']} to database.")
+                    except IntegrityError as e:
+                        db.rollback()
+                        # drevier-specificな一意制約違反エラーをキャッチ
+                        if e.orig and "duplicate key value violates unique constraint" in str(e.orig):
+                            print(f"Saved Post {normalized_data['post_id']} already exists in the database. Skipping.")
+                        else:
+                            # その他のIntegrityErrorは再度例外をスロー
+                            print(f"An error occurred while saving post {normalized_data['post_id']}: {e}")
+                    except Exception as e: # その他の予期せぬエラー処理
+                        db.rollback()
+                        print(f"An unexpected error occurred while saving post {normalized_data['post_id']}: {e}")
 
                     # 投稿間で少し待つ（API制限回避のため）
                     print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_POSTS} seconds before next post...")
@@ -255,18 +296,18 @@ def normalize_post_data(raw_post, provider, username=None):
         
             posted_at_str = raw_post.get("timestamp")
             posted_at_dt = parse(posted_at_str) if posted_at_str else None
-        if not posted_at_dt: # 投稿日時が無いデータは処理しない
-            raise ValueError("Timestamp is missing in Threads data.")
-        
-        return {
-            "username": username_for_db,
-            "post_id": post_id,
-            "text": raw_post.get("text", ""),
-            "source_url": raw_post.get("permalink", ""),
-            "posted_at": posted_at_dt,
-            "like_count": raw_post.get("like_count", 0),
-            "retweet_count":  0 # Threadsにはリツイートに相当する概念がないため0を設定
-        }
+            if not posted_at_dt: # 投稿日時が無いデータは処理しない
+                raise ValueError("Timestamp is missing in Threads data.")
+            
+            return {
+                "username": username_for_db,
+                "post_id": post_id,
+                "text": raw_post.get("text", ""),
+                "source_url": raw_post.get("permalink", ""),
+                "posted_at": posted_at_dt,
+                "like_count": raw_post.get("like_count", 0),
+                "retweet_count": raw_post.get("reshare_count", 0) # Threadsではリシェア数をretweet_countとして扱う
+            }
     except Exception as e:
         # データ構造が予期せぬ形式の場合に備える
         post_id_for_log = getattr(raw_post, "id", raw_post.get("id", "N/A"))
