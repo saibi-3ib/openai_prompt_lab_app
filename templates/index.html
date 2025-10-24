@@ -3,133 +3,399 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Investor Post Collector</title>
+    <title>Investor Post Collector - Lab</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="https://cdn.jsdelivr.net/npm/autolinker@3.15.0/dist/Autolinker.min.js"></script>
+    <style>
+        /* 画面全体(100vh)からヘッダーの高さ(65px)を引いた高さを確保 */
+        .layout-wrapper {
+            height: calc(100vh - 65px);
+        }
+        /* 中部ペイン(overflow-y-auto)のためのCSS */
+        #post-pane {
+            flex-basis: 0; /* flex-1 と overflow-y-auto を正しく機能させるため */
+        }
+        /* 選択された投稿のスタイル */
+        .post-item.selected {
+            background-color: #2d3748; /* bg-gray-700 */
+            border-color: #4a5568; /* border-gray-600 */
+            transform: scale(1.01);
+        }
+        /* ポスト本文のスタイル */
+        .post-text {
+            white-space: pre-wrap; /* 改行をそのまま表示 */
+            word-break: break-word; /* 長い単語やURLで折り返す */
+        }
+        /* リンク化されたURLのスタイル */
+        .post-text a {
+            color: #63b3ed; /* text-blue-400 */
+            text-decoration: underline;
+        }
+        /* もっと見るボタン */
+        .post-text.truncated {
+            max-height: 4.5em; /* 約3行分 (1.5em * 3) */
+            overflow: hidden;
+            position: relative;
+        }
+        /* もっと見るボタンのグラデーション */
+        .post-text.truncated::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 70%;
+            height: 1.5em;
+            background: linear-gradient(to right, rgba(26, 32, 44, 0), #1A202C 50%);
+        }
+        .toggle-truncate-btn {
+            color: #90cdf4; /* text-blue-300 */
+            font-size: 0.75rem;
+            font-weight: bold;
+            cursor: pointer;
+        }
+    </style>
 </head>
-<body class="bg-gray-900 text-white font-sans">
+<body class="bg-gray-900 text-white font-sans flex flex-col h-screen">
 
-    <!-- ヘッダー -->
-    <header class="bg-gray-800 shadow-md">
+    <header class="bg-gray-800 shadow-md sticky top-0 z-20">
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-white">Investor Post Collector</h1>
+            <h1 class="text-xl font-bold text-white">Analysis Lab 🧪</h1>
             <div class="flex items-center space-x-4">
-                <span class="text-sm text-gray-400">Worker Provider: <span class="font-bold text-yellow-400">{{ current_provider }}</span></span>
+                <span class="text-sm text-gray-400">Worker: <span class="font-bold text-yellow-400">{{ current_provider }}</span></span>
                 <a href="/manage" class="text-blue-400 hover:text-blue-300 transition duration-200">⚙️ 設定管理へ</a>
             </div>
         </nav>
     </header>
 
-    <!-- メインコンテンツ -->
-    <main class="container mx-auto px-6 py-8">
+    <div class="layout-wrapper flex flex-col">
         
-        <h2 class="text-xl font-semibold mb-6">最新の収集データ</h2>
-
-        <!-- ポストのリスト -->
-        <div class="space-y-6">
-            
-            {% for post in posts %}
-            <div id="post-{{ post.id }}" class="bg-gray-800 rounded-lg shadow-xl p-6 border border-gray-700 hover:bg-gray-700 transition duration-300">
+        <div id="filter-pane" class="flex-shrink-0 bg-gray-800/50 border-b border-gray-700 p-3 shadow-md z-10">
+            <div class="flex items-center space-x-4">
+                <div class="flex-1">
+                    <label for="filter-keyword" class="text-xs font-semibold text-gray-400">キーワード</label>
+                    <input type="text" id="filter-keyword" placeholder="本文テキストで絞り込み..." class="w-full text-sm bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white placeholder-gray-500">
+                </div>
                 
-                <!-- 投稿ヘッダー：ユーザー名と投稿日時 -->
-                <div class="flex justify-between items-center mb-4">
-                    <p class="font-bold text-lg text-blue-400">{{ post.username }}</p>
-                    <span class="text-sm text-gray-400">{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }} (UTC)</span>
-                </div>
-
-                <!-- AI要約ステータスとアクション -->
-                <div class="mb-4">
-                    <p class="font-semibold text-gray-100 mb-2">AI要約:</p>
-                    <div id="summary-content-{{ post.id }}">
-                        {% if post.ai_summary %}
-                            <!-- 分析完了 -->
-                            <p class="text-gray-300 bg-green-900/30 p-3 rounded border border-green-700/50">{{ post.ai_summary }}</p>
-                        {% else %}
-                            <!-- 未分析 / アクションボタン -->
-                            <button onclick="analyzePost('{{ post.id }}')" 
-                                    class="analyze-btn bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition duration-200"
-                                    data-post-id="{{ post.id }}">
-                                🤖 AI分析を実行 (約10秒)
-                            </button>
-                        {% endif %}
+                <div class="relative">
+                    <label class="text-xs font-semibold text-gray-400">アカウント</label>
+                    <button id="account-filter-btn" class="w-full mt-1 text-sm bg-gray-700 border border-gray-600 rounded px-2 py-1 text-left text-white flex justify-between items-center" style="width: 12rem;">
+                        <span id="account-filter-label">すべてのアカウント</span>
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </button>
+                    <div id="account-filter-menu" class="hidden absolute left-0 mt-1 w-full bg-gray-700 border border-gray-600 rounded shadow-lg z-20">
+                        <ul class="max-h-48 overflow-y-auto p-2 space-y-1">
+                            <li>
+                                <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
+                                    <input type="checkbox" class="form-checkbox bg-gray-800 border-gray-500 text-blue-500" value="Account1">
+                                    <span>Account1</span>
+                                </label>
+                            </li>
+                            <li>
+                                <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
+                                    <input type="checkbox" class="form-checkbox bg-gray-800 border-gray-500 text-blue-500" value="Account2">
+                                    <span>Account2</span>
+                                </label>
+                            </li>
+                        </ul>
                     </div>
                 </div>
 
-                <!-- 元のテキスト -->
-                <div class="mb-4 p-3 bg-gray-900 rounded">
-                    <p class="text-sm text-gray-400 italic">"{{ post.original_text }}"</p>
+                <div class="flex space-x-2">
+                    <div>
+                        <label for="filter-likes" class="text-xs font-semibold text-gray-400">いいね (n以上)</label>
+                        <input type="number" id="filter-likes" class="w-20 text-sm bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="0">
+                    </div>
+                    <div>
+                        <label for="filter-rts" class="text-xs font-semibold text-gray-400">RT (n以上)</label>
+                        <input type="number" id="filter-rts" class="w-20 text-sm bg-gray-700 border border-gray-600 rounded px-2 py-1 text-white" placeholder="0">
+                    </div>
                 </div>
 
-                <!-- 投稿フッター：いいね、RT、ソースへのリンク -->
-                <div class="flex justify-between items-center text-sm text-gray-400">
-                    <div class="flex space-x-4">
-                        <span>❤️ いいね: {{ post.like_count }}</span>
-                        <span>🔁 RT: {{ post.retweet_count }}</span>
-                        {% if post.link_summary %}
-                            <span class="text-yellow-500">🔗 リンク分析済</span>
-                        {% endif %}
-                    </div>
-                    <a href="{{ post.source_url }}" target="_blank" class="text-blue-400 hover:underline">元の投稿を見る &rarr;</a>
+                <div class="flex items-end space-x-2 h-full pt-4">
+                    <button id="filter-run-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-1 px-4 rounded transition duration-200">
+                        絞り込み
+                    </button>
+                    <button id="filter-reset-btn" class="bg-gray-600 hover:bg-gray-700 text-white text-xs py-1 px-2 rounded transition duration-200">
+                        リセット
+                    </button>
                 </div>
             </div>
-            {% endfor %}
-            <!-- ▲▲▲ ループここまで ▲▲▲ -->
-
         </div>
 
-    </main>
-
-    <!-- JavaScript for API Calls -->
-    <script>
-        // ポストIDを受け取り、AI分析APIを呼び出す関数
-        async function analyzePost(postId) {
-            const button = document.querySelector(`.analyze-btn[data-post-id="${postId}"]`);
-            const summaryContainer = document.getElementById(`summary-content-${postId}`);
+        <div id="post-pane" class="flex-1 overflow-y-auto p-3 space-y-2">
             
-            // ボタンのステータス変更
-            const originalText = button.textContent;
-            button.disabled = true;
-            button.textContent = '⏱️ 分析中... (しばらくお待ちください)';
-            button.classList.remove('bg-indigo-600');
-            button.classList.add('bg-yellow-600');
+            <div class="sticky top-0 bg-gray-900/80 backdrop-blur-sm py-2 px-1 mb-2 z-5">
+                <button id="deselect-all-btn" class="bg-gray-600 hover:bg-gray-700 text-white text-xs font-bold py-1 px-3 rounded transition duration-200">
+                    すべて選択解除
+                </button>
+                <span id="selection-counter" class="text-sm text-gray-400 ml-3">0件 選択中</span>
+            </div>
 
+            <div id="post-list-container">
+                {% for post in posts %}
+                <div id="post-{{ post.id }}" 
+                     class="post-item bg-gray-800 rounded shadow p-2 border border-gray-700 hover:bg-gray-700 transition duration-150 ease-in-out cursor-pointer"
+                     data-post-id="{{ post.id }}"
+                     data-index="{{ loop.index0 }}">
+                    
+                    <div class="flex justify-between items-start">
+                        <div class="flex items-center space-x-3">
+                            <span class="font-bold text-sm text-blue-400">{{ post.username }}</span>
+                            <span class="text-xs text-gray-400">{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }}</span>
+                        </div>
+                        <div class="flex space-x-3 text-xs text-gray-400 text-right flex-shrink-0">
+                            <span>❤️ {{ post.like_count }}</span>
+                            <span>🔁 {{ post.retweet_count }}</span>
+                            {% if post.link_summary %}
+                                <span class="text-yellow-500">🔗</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="mt-1">
+                        <div class="post-text text-sm text-gray-300 leading-snug"
+                             data-original-text="{{ (post.original_text or '') | replace('"', '&quot;') | replace('\n', '&#10;') }}">
+                            </div>
+                    </div>
+
+                    <div class="mt-1 text-right">
+                        <a href="{{ post.source_url }}" target="_blank" class="text-blue-500 text-xs hover:underline">元の投稿 &rarr;</a>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+
+        </div> <div id="action-pane" class="flex-shrink-0 bg-gray-800 border-t border-gray-700 p-4 shadow-inner z-10" style="height: 30%;">
+            <div class="grid grid-cols-2 gap-4 h-full">
+                <div class="flex flex-col h-full">
+                    <label for="prompt-select" class="text-sm font-semibold mb-2 text-green-400">1. プロンプトを選択 (または編集)</label>
+                    <select id="prompt-select" class="w-full p-2 bg-gray-700 border border-gray-600 rounded text-white mb-2">
+                        <option value="prompt_1">Default Summary Prompt</option>
+                        <option value="prompt_2">Sentiment Analysis Prompt</option>
+                    </select>
+                    <textarea id="prompt-editor" rows="10" class="w-full p-3 bg-gray-900 border border-gray-700 rounded text-gray-300 focus:ring-green-500 focus:border-green-500 text-sm flex-1"></textarea>
+                    <div class="mt-2 flex space-x-2">
+                         <button id="save-prompt-btn" class="bg-green-600 hover:bg-green-700 text-white text-xs font-bold py-1 px-3 rounded transition duration-200">保存</button>
+                         <button id="delete-prompt-btn" class="bg-red-700 hover:bg-red-800 text-white text-xs font-bold py-1 px-3 rounded transition duration-200">削除</button>
+                    </div>
+                </div>
+                <div class="flex flex-col h-full">
+                    <h3 class="text-sm font-semibold mb-2 text-yellow-400">2. 実行と結果</h3>
+                    <button id="analyze-batch-btn" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded transition duration-200 mb-2">
+                        <span id="batch-btn-counter">0</span> 件をまとめて分析実行
+                    </button>
+                    <div id="result-display" class="w-full p-3 bg-gray-900 border border-gray-700 rounded text-gray-300 text-sm flex-1 overflow-y-auto">
+                        </div>
+                </div>
+            </div>
+        </div> </div> <script>
+        // ▼▼▼【修正点】構文エラーとロジックの堅牢性を修正した完全なスクリプト ▼▼▼
+        document.addEventListener('DOMContentLoaded', () => {
+            
+            // --- 1. URLリンク化 & もっと見る機能 ---
             try {
-                // FlaskのanalyzeルートにPOSTリクエストを送信
-                const response = await fetch(`/analyze/${postId}`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
+                // Autolinker が定義されているか、ここで再確認
+                if (typeof Autolinker === 'undefined') {
+                    console.error("Autolinker library is not loaded. Skipping text processing.");
+                    throw new Error("Autolinker not defined");
+                }
+
+                const autolinker = new Autolinker({
+                    urls: { scheme: true, tld: true },
+                    email: false,
+                    phone: false,
+                    mention: 'twitter',
+                    hashtag: 'twitter',
+                    newWindow: true,
+                    stripPrefix: false,
+                    className: 'autolinked'
+                });
+
+                const maxLines = 3; 
+                const lineHeight = 1.5 * 14; 
+                const maxHeight = lineHeight * maxLines;
+
+                document.querySelectorAll('.post-text').forEach(el => {
+                    const rawText = el.dataset.originalText;
+
+                    if (!rawText || rawText.trim() === '' || rawText.toLowerCase() === 'none' || rawText.toLowerCase() === 'null') {
+                        el.innerHTML = '<span class="text-gray-500 italic">[本文なし]</span>';
+                        return; 
+                    }
+
+                    let originalText = rawText;
+                    
+                    try {
+                        const TmpElement = document.createElement('textarea');
+                        TmpElement.innerHTML = originalText;
+                        originalText = TmpElement.value;
+
+                        const linkedHtml = autolinker.link(originalText);
+                        el.innerHTML = linkedHtml;
+
+                        if (el.scrollHeight > maxHeight && el.scrollHeight > 0) {
+                            el.classList.add('truncated');
+                            const toggleBtn = document.createElement('span');
+                            toggleBtn.textContent = '...もっと見る';
+                            toggleBtn.className = 'toggle-truncate-btn';
+                            
+                            toggleBtn.addEventListener('click', (e) => {
+                                e.stopPropagation(); 
+                                if (el.classList.contains('truncated')) {
+                                    el.classList.remove('truncated');
+                                    toggleBtn.textContent = '閉じる';
+                                } else {
+                                    el.classList.add('truncated');
+                                    toggleBtn.textContent = '...もっと見る';
+                                }
+                            });
+                            
+                            el.parentNode.appendChild(toggleBtn);
+                        }
+                    } catch (innerError) {
+                        console.error("Error processing post text (ID: " + el.closest('.post-item')?.dataset.postId + "):", innerError);
+                        el.innerHTML = '<span class="text-red-500">[本文の表示に失敗しました]</span>';
                     }
                 });
 
-                const result = await response.json();
-
-                if (response.ok && result.status === 'success') {
-                    // 成功した場合
-                    summaryContainer.innerHTML = `
-                        <p class="text-gray-300 bg-green-900/30 p-3 rounded border border-green-700/50">
-                            ${result.summary}
-                        </p>
-                    `;
-                } else {
-                    // 失敗した場合
-                    alert('分析に失敗しました: ' + result.message); // エラーメッセージを表示
-                    summaryContainer.innerHTML = `
-                        <p class="text-red-400 bg-red-900/30 p-3 rounded border border-red-700/50">
-                            分析失敗: ${result.message || '不明なエラー'}
-                        </p>
-                    `;
-                }
-
             } catch (error) {
-                // 通信自体が失敗した場合
-                console.error('Fetch error:', error);
-                summaryContainer.innerHTML = `
-                    <p class="text-red-400 bg-red-900/30 p-3 rounded border border-red-700/50">
-                        通信エラーが発生しました。コンソールを確認してください。
-                    </p>
-                `;
+                console.error("Fatal error during post text processing:", error);
+                // 本文処理が失敗しても、以降の処理は続行させる
             }
-        }
+            // --- URLリンク化機能 (ここまで) ---
+
+
+            // --- 2. Shift選択機能 ---
+            // (グローバルスコープで selectedPostIds を定義)
+            const selectedPostIds = new Set();
+            try {
+                const postListContainer = document.getElementById('post-list-container');
+                const postItems = Array.from(document.querySelectorAll('.post-item'));
+                const selectionCounter = document.getElementById('selection-counter');
+                const batchBtnCounter = document.getElementById('batch-btn-counter');
+                const deselectAllBtn = document.getElementById('deselect-all-btn');
+
+                if (!postListContainer || !selectionCounter || !batchBtnCounter || !deselectAllBtn) {
+                    console.error("Selection UI elements not found. Skipping selection feature setup.");
+                } else {
+                    let lastClickedIndex = -1;
+
+                    function updateSelectionUI() {
+                        const count = selectedPostIds.size;
+                        selectionCounter.textContent = `${count}件 選択中`;
+                        batchBtnCounter.textContent = `${count}`; // 「件」を削除
+                        postItems.forEach(item => {
+                            item.classList.toggle('selected', selectedPostIds.has(item.dataset.postId));
+                        });
+                    }
+
+                    postListContainer.addEventListener('click', (e) => {
+                        const clickedItem = e.target.closest('.post-item');
+                        if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn')) {
+                            return; 
+                        }
+                        const clickedPostId = clickedItem.dataset.postId;
+                        const clickedIndex = parseInt(clickedItem.dataset.index, 10);
+                        if (e.shiftKey && lastClickedIndex !== -1) {
+                            const start = Math.min(lastClickedIndex, clickedIndex);
+                            const end = Math.max(lastClickedIndex, clickedIndex);
+                            for (let i = start; i <= end; i++) {
+                                postItems[i] && selectedPostIds.add(postItems[i].dataset.postId);
+                            }
+                        } else {
+                            selectedPostIds.has(clickedPostId) ? selectedPostIds.delete(clickedPostId) : selectedPostIds.add(clickedPostId);
+                        }
+                        lastClickedIndex = clickedIndex;
+                        updateSelectionUI();
+                    });
+
+                    deselectAllBtn.addEventListener('click', () => {
+                        selectedPostIds.clear();
+                        lastClickedIndex = -1;
+                        updateSelectionUI();
+                    });
+                }
+            } catch (error) {
+                console.error("Fatal error during selection setup:", error);
+            }
+            // --- Shift選択機能 (ここまで) ---
+
+
+            // --- 3. (仮) 一括分析実行ボタン ---
+            try {
+                const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
+                const resultDisplay = document.getElementById('result-display');
+                const batchBtnCounter = document.getElementById('batch-btn-counter'); // 再度取得
+
+                if (analyzeBatchBtn) { 
+                    analyzeBatchBtn.addEventListener('click', async () => {
+                        // selectedPostIds はグローバルスコープで定義されているものを参照
+                        const postIds = Array.from(selectedPostIds);
+                        
+                        const promptText = document.getElementById('prompt-editor').value;
+                        if (postIds.length === 0) {
+                            alert('分析する投稿を1件以上選択してください。'); return;
+                        }
+                        if (!promptText) {
+                            alert('プロンプトを入力してください。'); return;
+                        }
+                        
+                        analyzeBatchBtn.disabled = true;
+                        analyzeBatchBtn.innerHTML = '⏱️ 分析中...'; // ボタンカウンターをテキストで置き換え
+                        resultDisplay.innerHTML = '<p>分析を開始します...</p>';
+                        
+                        try {
+                            console.log('API呼び出し:', { postIds: postIds, prompt: promptText });
+                            await new Promise(resolve => setTimeout(resolve, 1000));
+                            const dummyResult = { status: "success", summary: `OK: ${postIds.length}件を分析` };
+                            
+                            if (dummyResult.status === 'success') {
+                                resultDisplay.innerHTML = `<p class="text-green-400 font-bold">分析成功</p><pre class="text-xs">${JSON.stringify(dummyResult, null, 2)}</pre>`;
+                            } else { throw new Error(dummyResult.message); }
+
+                        } catch (error) {
+                            resultDisplay.innerHTML = `<p class="text-red-400">分析エラー: ${error.message}</p>`;
+                        } finally {
+                            analyzeBatchBtn.disabled = false;
+                            // ボタンのテキストを元に戻す
+                            analyzeBatchBtn.innerHTML = `<span id="batch-btn-counter">${postIds.length}</span> 件をまとめて分析実行`;
+                            // ボタン内のカウンターも更新
+                            if(batchBtnCounter) batchBtnCounter.textContent = postIds.length;
+                        }
+                    
+                    }); // <-- ★★★ analyzeBatchBtn.addEventListener の正しい閉じ括弧
+                }
+            } catch (error) {
+                console.error("Fatal error during batch analysis setup:", error);
+            }
+            // --- 一括分析実行ボタン (ここまで) ---
+
+
+            // --- 4. アカウント絞り込みドロップダウン ---
+            try {
+                const accountFilterBtn = document.getElementById('account-filter-btn');
+                const accountFilterMenu = document.getElementById('account-filter-menu');
+
+                if (accountFilterBtn && accountFilterMenu) {
+                    accountFilterBtn.addEventListener('click', (e) => {
+                        e.stopPropagation(); 
+                        accountFilterMenu.classList.toggle('hidden');
+                    });
+
+                    document.addEventListener('click', (e) => {
+                        if (!accountFilterBtn.contains(e.target) && !accountFilterMenu.contains(e.target)) {
+                            accountFilterMenu.classList.add('hidden');
+                        }                
+                    });
+                }
+            } catch (error) {
+                console.error("Fatal error during filter dropdown setup:", error);
+            }
+            // --- アカウント絞り込み (ここまで) ---
+
+        });
     </script>
+
 </body>
 </html>
