@@ -290,8 +290,22 @@
             <div id="action-pane-content">
                 <div class="grid grid-cols-2 gap-4 h-full">
                     <div class="flex flex-col h-full">
-                        <label for="prompt-select" class="text-sm font-semibold mb-2" style="color: var(--color-accent);">1. プロンプトを選択</label>
-                        <select id="prompt-select" class="w-full p-2 mb-2 rounded"></select>
+                        <div class="flex space-x-4 mb-2"> 
+                            <div class="flex-1"> <label for="prompt-select" class="text-xs font-semibold" style="color: var(--color-accent);">1a. プロンプトを選択</label>
+                                <select id="prompt-select" class="w-full p-2 mt-1 rounded text-sm">
+                                    <option value="prompt_1">Default Summary Prompt</option>
+                                    <option value="prompt_2">Sentiment Analysis Prompt</option>
+                                </select>
+                            </div>
+                            
+                            <div class="w-1/3"> <label for="model-select" class="text-xs font-semibold" style="color: var(--color-accent);">1b. モデルを選択</label>
+                                <select id="model-select" class="w-full p-2 mt-1 rounded text-sm">
+                                    {% for model in available_models %}
+                                    <option value="{{ model }}">{{ model }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            </div>
                         <textarea id="prompt-editor" rows="10" class="w-full p-3 text-sm flex-1 rounded"></textarea>
                         <div class="mt-2 flex space-x-2">
                             <button id="save-prompt-btn" class="bg-gray-600 hover:bg-gray-700 text-xs font-bold py-1 px-3 rounded transition duration-200">保存</button>
@@ -343,22 +357,85 @@
                 }
             } catch (error) { console.error("Fatal error during selection setup:", error); }
             
-            // --- 3. (仮) 一括分析実行ボタン ---
+            // --- 3. 一括分析実行ボタン (API連携版) ---
             try {
-                const analyzeBatchBtn = document.getElementById('analyze-batch-btn'); const resultDisplay = document.getElementById('result-display'); const creditMonitor = document.getElementById('credit-monitor-display'); const batchBtnCounter = document.getElementById('batch-btn-counter');
-                if (analyzeBatchBtn) { 
+                const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
+                const resultDisplay = document.getElementById('result-display');
+                const creditMonitor = document.getElementById('credit-monitor-display');
+                
+                // ▼▼▼ モデル選択要素を取得 ▼▼▼
+                const modelSelect = document.getElementById('model-select');
+                // ▲▲▲ モデル選択要素を取得 ▲▲▲
+
+                if (analyzeBatchBtn && modelSelect) { // modelSelect もチェック
                     analyzeBatchBtn.addEventListener('click', async () => {
-                        const postItems = Array.from(document.querySelectorAll('.post-item.selected')); const postIds = postItems.map(item => item.dataset.postId); const promptText = document.getElementById('prompt-editor').value;
-                        if (postIds.length === 0) { alert('分析する投稿を1件以上選択してください。'); return; } if (!promptText) { alert('プロンプトを入力してください。'); return; }
-                        analyzeBatchBtn.disabled = true; analyzeBatchBtn.innerHTML = '⏱️ 分析中...'; resultDisplay.innerHTML = '<p class="text-yellow-400">分析を開始します... AI応答を待機中...</p>';
+                        const postItems = Array.from(document.querySelectorAll('.post-item.selected'));
+                        const postIds = postItems.map(item => item.dataset.postId);
+                        const promptText = document.getElementById('prompt-editor').value;
+                        
+                        // ▼▼▼ 選択されたモデル名を取得 ▼▼▼
+                        const selectedModelName = modelSelect.value;
+                        // ▲▲▲ 選択されたモデル名を取得 ▲▲▲
+
+                        if (postIds.length === 0) { alert('分析する投稿を1件以上選択してください。'); return; }
+                        if (!promptText) { alert('プロンプトを入力してください。'); return; }
+                        
+                        analyzeBatchBtn.disabled = true;
+                        analyzeBatchBtn.innerHTML = '⏱️ 分析中...';
+                        resultDisplay.innerHTML = `<p class="text-yellow-400">分析を開始します (${selectedModelName} 使用)... AI応答を待機中...</p>`;
+                        
                         try {
-                            const response = await fetch('/api/analyze-batch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ postIds: postIds.map(id => parseInt(id, 10)), promptText: promptText }) }); const result = await response.json();
-                            if (response.ok && result.status === 'success') { if (creditMonitor && result.new_balance_usd !== undefined) { creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6); } const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2); const costInfo = result.cost_usd ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})` : 'コスト情報なし'; resultDisplay.innerHTML = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p><p class="mt-2 text-sm">コスト: ${costInfo}</p><p class="mt-3 font-semibold text-gray-300">概要:</p><p class="text-sm italic">${result.summary}</p><p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p><pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre><p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`; } else { const errorMessage = result.message || '不明なエラー'; throw new Error(`APIエラー: ${errorMessage}`); }
-                        } catch (error) { console.error('一括分析エラー:', error); resultDisplay.innerHTML = `<p class="text-red-400 font-bold">❌ 分析エラー</p><pre class="text-sm mt-1">${error.message}</pre>`; } finally { analyzeBatchBtn.disabled = false; analyzeBatchBtn.innerHTML = `<span id="batch-btn-counter">${postIds.length}</span> 件をまとめて分析実行`; if(batchBtnCounter) batchBtnCounter.textContent = postIds.length; }
+                            const response = await fetch('/api/analyze-batch', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    postIds: postIds.map(id => parseInt(id, 10)),
+                                    promptText: promptText,
+                                    // ▼▼▼ モデル名をAPIに送信 ▼▼▼
+                                    modelName: selectedModelName 
+                                    // ▲▲▲ モデル名をAPIに送信 ▲▲▲
+                                })
+                            });
+
+                            const result = await response.json();
+                            
+                            if (response.ok && result.status === 'success') {
+                                // 残高更新 (変更なし)
+                                if (creditMonitor && result.new_balance_usd !== undefined) {
+                                    creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6);
+                                }
+                                // 結果表示 (変更なし)
+                                const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2);
+                                const costInfo = result.cost_usd ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})` : 'コスト情報なし';
+                                resultDisplay.innerHTML = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p><p class="mt-2 text-sm">コスト: ${costInfo}</p><p class="mt-3 font-semibold text-gray-300">概要:</p><p class="text-sm italic">${result.summary}</p><p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p><pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre><p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`;
+                            } else { 
+                                const errorMessage = result.message || '不明なエラー';
+                                throw new Error(`APIエラー: ${errorMessage}`);
+                            }
+
+                        } catch (error) {
+                            // (エラー処理は変更なし)
+                            console.error('一括分析エラー:', error);
+                            resultDisplay.innerHTML = `<p class="text-red-400 font-bold">❌ 分析エラー</p><pre class="text-sm mt-1">${error.message}</pre>`;
+                        } finally {
+                            // (finallyブロックは変更なし)
+                            analyzeBatchBtn.disabled = false;
+                            analyzeBatchBtn.innerHTML = `<span id="batch-btn-counter">${postIds.length}</span> 件をまとめて分析実行`;
+                            // ボタン内のカウンターも更新 (念のため)
+                            const batchBtnCounter = document.getElementById('batch-btn-counter'); 
+                            if(batchBtnCounter) batchBtnCounter.textContent = postIds.length;
+                        }
+                    
                     }); 
+                } else {
+                    console.error("Analyze button or model select element not found.");
                 }
-            } catch (error) { console.error("Fatal error during batch analysis setup:", error); }
-            
+            } catch (error) {
+                console.error("Fatal error during batch analysis setup:", error);
+            }        
+                
             // --- 4. アカウント絞り込みドロップダウン ---
             try {
                 const accountFilterBtn = document.getElementById('account-filter-btn'); const accountFilterMenu = document.getElementById('account-filter-menu');

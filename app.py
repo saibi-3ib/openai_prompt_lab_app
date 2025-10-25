@@ -17,6 +17,8 @@ client_openai = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else Non
 # プロンプト編集機能のための初期プロンプト名
 DEFAULT_PROMPT_KEY = "default_summary"
 
+# 選択可能なOpenAIモデル
+AVAILABLE_MODELS = ["gpt-4o-mini", "gpt-3.5-turbo"] # 必要に応じてモデルを追加
 
 # --- OpenAI コスト計算定数と関数 ---
 
@@ -154,7 +156,8 @@ def index():
             "index.html", 
             posts=posts, 
             current_provider=current_provider,
-            current_credit=current_credit
+            current_credit=current_credit,
+            available_models=AVAILABLE_MODELS
         )
     finally:
         db.close()
@@ -220,10 +223,12 @@ def manage():
         credit_setting = get_or_create_credit_setting(db)
         current_credit = float(credit_setting.value) # ここで current_credit を定義
         
-        return render_template("manage.html", 
-                               current_provider=current_provider, 
-                               default_prompt=current_prompt.template_text,
-                               current_credit=current_credit) # ★★★ ここで渡す ★★★
+        return render_template(
+            "manage.html", 
+            current_provider=current_provider, 
+            default_prompt=current_prompt.template_text,
+            current_credit=current_credit, # ★★★ ここで渡す ★★★
+        )
     finally:
         db.close()
 
@@ -301,6 +306,7 @@ def analyze_batch():
     data = request.get_json()
     post_ids = data.get('postIds', [])
     prompt_text = data.get('promptText')
+    selected_model = data.get('modelName', AVAILABLE_MODELS[0]) # 指定がなければ最初のモデルをデフォルトに
 
     if not post_ids or not prompt_text:
         return jsonify({"status": "error", "message": "投稿IDのリストとプロンプトテキストが必要です。"}), 400
@@ -337,7 +343,7 @@ def analyze_batch():
         #    - 複数ポストの処理には、より高性能なモデル (gpt-4o-miniなど) を推奨しますが、
         #      まずは gpt-3.5-turbo でテストします。
         response = client_openai.chat.completions.create(
-            model=ANALYSIS_MODEL, # 固定したモデル名を使用            
+            model=selected_model,
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": "You are a helpful assistant designed to output JSON. You are analyzing multiple social media posts about investing. Your output must summarize the core sentiment and investment topics discussed across ALL provided posts."},
@@ -356,8 +362,7 @@ def analyze_batch():
         summary = ai_result_json.get("summary", "Summary not available.")
 
         # コスト計算
-        total_cost = calculate_cost(ANALYSIS_MODEL, usage_data)
-
+        total_cost = calculate_cost(selected_model, usage_data)
         # クレジット残高を更新
         new_balance = update_credit_balance(db, total_cost)
 
@@ -390,8 +395,7 @@ def analyze_batch():
             "analyzed_count": len(post_ids),
             "result_id": new_result.id,
             "raw_json": ai_result_str,
-            # ▼▼▼【修正点5】コスト情報をレスポンスに追加 ▼▼▼
-            "model": ANALYSIS_MODEL,
+            "model": selected_model,
             "cost_usd": total_cost,
             "new_balance_usd": new_balance, # 新しい残高をレスポンスに追加
             "usage": usage_data # 使用量（トークン数）も返す
