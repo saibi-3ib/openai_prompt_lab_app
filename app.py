@@ -173,3 +173,95 @@ def analyze_post(post_id):
         return jsonify({"status": "error", "message": f"AI analysis failed: {str(e)}"}), 500
     finally:
         db.close()
+
+# --- 新しいAPIルート: 複数のポストを一括分析する ---
+@app.route('/api/analyze-batch', methods=['POST'])
+def analyze_batch():
+    if not client_openai:
+        return jsonify({"status": "error", "message": "OpenAI API Key not configured."}), 400
+
+    # 1. リクエストボディからデータを受信
+    data = request.get_json()
+    post_ids = data.get('postIds', [])
+    prompt_text = data.get('promptText')
+
+    if not post_ids or not prompt_text:
+        return jsonify({"status": "error", "message": "投稿IDのリストとプロンプトテキストが必要です。"}), 400
+    
+    db = SessionLocal()
+    
+    try:
+        # 2. データベースから複数の投稿を一度に取得
+        #   in_() を使うことで、効率的に複数のIDの投稿を取得できます。
+        posts = db.query(CollectedPost).filter(CollectedPost.id.in_(post_ids)).all()
+        
+        if not posts:
+            return jsonify({"status": "error", "message": "選択された投稿IDに対応するデータが見つかりませんでした。"}), 404
+
+        # 3. 複数の投稿テキストを結合して、AIに渡す文字列を作成
+        #    - 各投稿を改行と区切り線で結合し、AIが処理しやすいようにします。
+        combined_texts = ""
+        for i, post in enumerate(posts):
+            # 投稿をリスト化して番号を振る
+            combined_texts += f"--- POST {i+1} (ID:{post.post_id}) ---\n"
+            combined_texts += post.original_text + "\n\n"
+        
+        # 4. プロンプト変数を置換
+        #    - {texts} を結合したテキストで置換
+        full_prompt = prompt_text.replace("{texts}", combined_texts)
+        #    - {text} が残っている場合は、AIに指示を出す文章に置き換えます（念のため）
+        full_prompt = full_prompt.replace("{text}", "[警告: {text} 変数は単数分析用です。{texts} を使用してください。]")
+
+
+        # 5. AI呼び出しの実行
+        #    - 複数ポストの処理には、より高性能なモデル (gpt-4o-miniなど) を推奨しますが、
+        #      まずは gpt-3.5-turbo でテストします。
+        response = client_openai.chat.completions.create(
+            model="gpt-3.5-turbo",
+            response_format={"type": "json_object"},
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant designed to output JSON. You are analyzing multiple social media posts about investing. Your output must summarize the core sentiment and investment topics discussed across ALL provided posts."},
+                {"role": "user", "content": full_prompt}
+            ]
+        )
+        ai_result_str = response.choices[0].message.content
+
+# 6. JSON結果のパースと保存 (修正後のコード)
+        ai_result_json = json.loads(ai_result_str)
+        # summary のパースは引き続き行い、extracted_summary に格納する
+        summary = ai_result_json.get("summary", "Summary not available.")
+
+        # 新しい AnalysisResult レコードを作成 (履歴として保存)
+        current_prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
+
+        new_result = AnalysisResult(
+            prompt_id = current_prompt.id if current_prompt else 1, 
+            # ▼▼▼ 修正点: raw_json_response に AIからの生文字列全体を保存 ▼▼▼
+            raw_json_response = ai_result_str, 
+            # ▼▼▼ 修正点: extracted_summary にパースした summary の値を保存 ▼▼▼
+            extracted_summary = summary
+        )
+                
+        # 7. 多対多の関連付け
+        for post in posts:
+            new_result.posts.append(post) # 選択された全ての投稿をリンク
+        
+        # 8. データベースにコミット
+        db.add(new_result)
+        db.commit()
+        
+        # 成功レスポンス
+        return jsonify({
+            "status": "success", 
+            "summary": summary, 
+            "analyzed_count": len(post_ids),
+            "result_id": new_result.id
+        })
+
+    except Exception as e:
+        db.rollback()
+        error_msg = f"AI一括分析処理中にエラーが発生しました: {str(e)}"
+        print(error_msg)
+        return jsonify({"status": "error", "message": f"AI analysis failed: {str(e)}", "details": error_msg}), 500
+    finally:
+        db.close()

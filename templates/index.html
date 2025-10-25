@@ -322,18 +322,21 @@
             // --- Shift選択機能 (ここまで) ---
 
 
-            // --- 3. (仮) 一括分析実行ボタン ---
+// --- 3. (仮) 一括分析実行ボタン (API連携版) ---
             try {
                 const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
                 const resultDisplay = document.getElementById('result-display');
-                const batchBtnCounter = document.getElementById('batch-btn-counter'); // 再度取得
+                
+                // selectedPostIds はグローバルスコープで定義されているものを参照
 
                 if (analyzeBatchBtn) { 
                     analyzeBatchBtn.addEventListener('click', async () => {
-                        // selectedPostIds はグローバルスコープで定義されているものを参照
-                        const postIds = Array.from(selectedPostIds);
+                        // 選択されたpost-itemからIDを抽出
+                        const postItems = Array.from(document.querySelectorAll('.post-item.selected'));
+                        const postIds = postItems.map(item => item.dataset.postId); // IDは文字列として取得されます
                         
                         const promptText = document.getElementById('prompt-editor').value;
+                        
                         if (postIds.length === 0) {
                             alert('分析する投稿を1件以上選択してください。'); return;
                         }
@@ -342,29 +345,47 @@
                         }
                         
                         analyzeBatchBtn.disabled = true;
-                        analyzeBatchBtn.innerHTML = '⏱️ 分析中...'; // ボタンカウンターをテキストで置き換え
-                        resultDisplay.innerHTML = '<p>分析を開始します...</p>';
+                        analyzeBatchBtn.innerHTML = '⏱️ 分析中...';
+                        resultDisplay.innerHTML = '<p class="text-yellow-400">分析を開始します... AI応答を待機中...</p>';
                         
                         try {
-                            console.log('API呼び出し:', { postIds: postIds, prompt: promptText });
-                            await new Promise(resolve => setTimeout(resolve, 1000));
-                            const dummyResult = { status: "success", summary: `OK: ${postIds.length}件を分析` };
+                            const response = await fetch('/api/analyze-batch', {
+                                method: 'POST',
+                                headers: {
+                                    'Content-Type': 'application/json'
+                                },
+                                body: JSON.stringify({
+                                    postIds: postIds.map(id => parseInt(id, 10)), // IDを整数型に変換して送信
+                                    promptText: promptText
+                                })
+                            });
+
+                            const result = await response.json();
                             
-                            if (dummyResult.status === 'success') {
-                                resultDisplay.innerHTML = `<p class="text-green-400 font-bold">分析成功</p><pre class="text-xs">${JSON.stringify(dummyResult, null, 2)}</pre>`;
-                            } else { throw new Error(dummyResult.message); }
+                            if (response.ok && result.status === 'success') {
+                                resultDisplay.innerHTML = `
+                                    <p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p>
+                                    <p class="mt-2 font-semibold text-gray-300">概要:</p>
+                                    <p class="text-sm italic">${result.summary}</p>
+                                    <p class="mt-3 font-semibold text-gray-300">生JSON:</p>
+                                    <pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${JSON.stringify(result.raw_json, null, 2)}</pre>
+                                    <p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>
+                                `;
+                            } else { 
+                                const errorMessage = result.message || '不明なエラーが発生しました。';
+                                throw new Error(`APIエラー: ${errorMessage}`);
+                            }
 
                         } catch (error) {
-                            resultDisplay.innerHTML = `<p class="text-red-400">分析エラー: ${error.message}</p>`;
+                            console.error('一括分析エラー:', error);
+                            resultDisplay.innerHTML = `<p class="text-red-400 font-bold">❌ 分析エラー</p><pre class="text-sm mt-1">${error.message}</pre>`;
                         } finally {
                             analyzeBatchBtn.disabled = false;
                             // ボタンのテキストを元に戻す
                             analyzeBatchBtn.innerHTML = `<span id="batch-btn-counter">${postIds.length}</span> 件をまとめて分析実行`;
-                            // ボタン内のカウンターも更新
-                            if(batchBtnCounter) batchBtnCounter.textContent = postIds.length;
                         }
                     
-                    }); // <-- ★★★ analyzeBatchBtn.addEventListener の正しい閉じ括弧
+                    }); 
                 }
             } catch (error) {
                 console.error("Fatal error during batch analysis setup:", error);

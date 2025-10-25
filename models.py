@@ -85,7 +85,7 @@ class AnalysisResult(Base):
     __tablename__ = "analysis_results"
 
     id = Column(Integer, primary_key=True, index=True)
-
+    
     # 外部キー: 使用したプロンプト
     prompt_id = Column(Integer, ForeignKey('prompts.id'), nullable=False, index=True)
 
@@ -94,11 +94,11 @@ class AnalysisResult(Base):
 
     # JSONから抽出した主要な結果("summary"など)
     extracted_summary = Column(Text, nullable=True)
-
+    
     # (任意) センチメントや銘柄など、将来的に抽出するデータ用のカラム
     # extracted_sentiment = Column(String, nullable=True)
     # extracted_tickers = Column(String, nullable=True)
-
+    
     analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
     # リレーションシップ定義("Prompt")
@@ -107,6 +107,13 @@ class AnalysisResult(Base):
     # この分析のために使用した投稿群リスト (多対多)
     posts = relationship(
         "CollectedPost", 
-        secondary = analysis_posts_link,  # analysis_posts_linkテーブルを経由
-        back_populates = "analyses" # CollectedPost側の"analyses"と相互参照 
+        secondary = analysis_posts_link,
+        back_populates = "analyses" 
     ) 
+
+    # ▼▼▼【ここから追加】コストとモデルのカラム ▼▼▼
+    # 使用したAIモデル (例: gpt-4o-mini, gpt-3.5-turbo)
+    ai_model = Column(String, nullable=True)
+    
+    # 消費したクレジットの概算コスト (USD)
+    cost_usd = Column(Float, nullable=True)
