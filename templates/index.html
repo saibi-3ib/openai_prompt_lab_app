@@ -62,6 +62,14 @@
         <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
             <h1 class="text-xl font-bold text-white">Analysis Lab 🧪</h1>
             <div class="flex items-center space-x-4">
+                
+                <div class="bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-1">
+                    <span class="text-sm text-gray-400">残高: </span>
+                    <span id="credit-monitor-display" class="font-bold text-lg text-yellow-400">
+                        ${{ '%.6f' | format(current_credit) }}
+                    </span>
+                    <span class="text-xs text-gray-400">USD</span>
+                </div>
                 <span class="text-sm text-gray-400">Worker: <span class="font-bold text-yellow-400">{{ current_provider }}</span></span>
                 <a href="/manage" class="text-blue-400 hover:text-blue-300 transition duration-200">⚙️ 設定管理へ</a>
             </div>
@@ -322,10 +330,13 @@
             // --- Shift選択機能 (ここまで) ---
 
 
-// --- 3. (仮) 一括分析実行ボタン (API連携版) ---
+            // --- 3. (仮) 一括分析実行ボタン (API連携版) ---
             try {
                 const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
                 const resultDisplay = document.getElementById('result-display');
+
+                // ヘッダーの残高表示要素を取得 
+                const creditMonitor = document.getElementById('credit-monitor-display');
                 
                 // selectedPostIds はグローバルスコープで定義されているものを参照
 
@@ -365,6 +376,11 @@
                             if (response.ok && result.status === 'success') {
                                 const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2);
                                 
+                                // ヘッダーの残高を動的に更新 
+                                if (creditMonitor && result.new_balance_usd !== undefined) {
+                                    // app.py から返された new_balance_usd (float) を6桁で表示
+                                    creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6);
+                                }                                
                                 // コスト表示用の文字列
                                 const costInfo = result.cost_usd 
                                     ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})`

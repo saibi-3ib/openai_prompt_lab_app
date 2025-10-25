@@ -82,7 +82,7 @@ def update_credit_balance(db, cost_usd: float) -> float:
         print(f"Error updating credit balance: {e}")
         return current_balance
 
-def get_or_create_credit_setting(db, initial_value='18.00') -> Setting:
+def get_or_create_credit_setting(db, initial_value='20.000000') -> Setting:
     """DBからOpenAIクレジット設定を取得。なければ初期値で作成し、そのSettingオブジェクトを返す。"""
     key = 'openai_total_credit'
     setting = db.query(Setting).filter(Setting.key == key).first()
@@ -123,7 +123,7 @@ def get_current_prompt(db):
         return new_prompt
     return prompt
 
-def get_or_create_credit_setting(db, initial_value='18.00') -> Setting:
+def get_or_create_credit_setting(db, initial_value='18.000000') -> Setting:
     """DBからOpenAIクレジット設定を取得。なければ初期値で作成し、そのSettingオブジェクトを返す。"""
     key = 'openai_total_credit'
     setting = db.query(Setting).filter(Setting.key == key).first()
@@ -145,8 +145,17 @@ def index():
         posts = db.query(CollectedPost).order_by(CollectedPost.id.desc()).limit(50).all()
         # API設定を読み込み
         current_provider = get_current_provider(db)
+   
+        # 現在のクレジット残高を取得 (なければ初期化)
+        credit_setting = get_or_create_credit_setting(db)
+        current_credit = float(credit_setting.value)
         
-        return render_template("index.html", posts=posts, current_provider=current_provider)
+        return render_template(
+            "index.html", 
+            posts=posts, 
+            current_provider=current_provider,
+            current_credit=current_credit
+        )
     finally:
         db.close()
 
@@ -192,8 +201,8 @@ def manage():
             elif action == 'save_credit':
                 new_credit_str = request.form.get('credit_amount')
                 try:
-                    # 数値かチェックし、小数点以下2桁の文字列に変換
-                    new_credit = round(float(new_credit_str), 2)
+                    # 数値かチェックし、小数点以下6桁の文字列に変換
+                    new_credit = round(float(new_credit_str), 6)
                     setting = get_or_create_credit_setting(db)
                     setting.value = str(new_credit)
                     db.commit()
@@ -217,7 +226,7 @@ def manage():
                                current_credit=current_credit) # ★★★ ここで渡す ★★★
     finally:
         db.close()
-        
+
 # --- オンデマンドAI分析の実行 ---
 @app.route('/analyze/<int:post_id>', methods=['POST'])
 def analyze_post(post_id):
