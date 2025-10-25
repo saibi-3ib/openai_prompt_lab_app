@@ -44,7 +44,55 @@ def calculate_cost(model_name: str, usage: dict) -> float:
     # 小数点以下8桁で丸めて返す
     return round(total_cost, 8)
 
+# --- OpenAI 残クレジット計算用の関数 ---
 
+def get_current_credit(db) -> float:
+    """DBから現在の残高（クレジット）を取得する"""
+    setting = db.query(Setting).filter(Setting.key == 'openai_total_credit').first()
+    # 見つからない場合は初期値（例：0.00 USD）を設定するロジックが必要です
+    if setting:
+        try:
+            return float(setting.value)
+        except ValueError:
+            print("Warning: openai_total_credit is not a valid float. Resetting to 0.")
+            return 0.0
+    
+    # クレジット設定がDBにない場合は、0.00を初期値として挿入し、0を返す
+    new_setting = Setting(key='openai_total_credit', value='0.00')
+    db.add(new_setting)
+    db.commit()
+    return 0.0
+
+def update_credit_balance(db, cost_usd: float) -> float:
+    """残高から消費コストを差し引き、DBを更新する"""
+    setting = db.query(Setting).filter(Setting.key == 'openai_total_credit').first()
+    if not setting:
+        return 0.0 # 設定がなければ更新スキップ
+
+    try:
+        current_balance = float(setting.value)
+        new_balance = current_balance - cost_usd
+        
+        # データベースを更新
+        setting.value = str(round(new_balance, 8))
+        # コミットは呼び出し元の analyze_batch でまとめて行う
+        
+        return new_balance
+    except ValueError as e:
+        print(f"Error updating credit balance: {e}")
+        return current_balance
+
+def get_or_create_credit_setting(db, initial_value='18.00') -> Setting:
+    """DBからOpenAIクレジット設定を取得。なければ初期値で作成し、そのSettingオブジェクトを返す。"""
+    key = 'openai_total_credit'
+    setting = db.query(Setting).filter(Setting.key == key).first()
+    
+    if not setting:
+        new_setting = Setting(key=key, value=initial_value)
+        db.add(new_setting)
+        db.commit()
+        return new_setting
+    return setting
 
 # --- DB操作ヘルパー関数 ---
 def get_current_provider(db):
@@ -75,6 +123,20 @@ def get_current_prompt(db):
         return new_prompt
     return prompt
 
+def get_or_create_credit_setting(db, initial_value='18.00') -> Setting:
+    """DBからOpenAIクレジット設定を取得。なければ初期値で作成し、そのSettingオブジェクトを返す。"""
+    key = 'openai_total_credit'
+    setting = db.query(Setting).filter(Setting.key == key).first()
+    
+    if not setting:
+        # DBに設定がなければ初期値を作成
+        new_setting = Setting(key=key, value=initial_value)
+        db.add(new_setting)
+        db.commit()
+        # commit 後にセッションからオブジェクトを再取得またはリフレッシュ（ここではシンプルにオブジェクトを返す）
+        return new_setting
+    return setting
+
 # --- メインページ (データ表示) ---
 @app.route('/')
 def index():
@@ -95,7 +157,7 @@ def manage():
     try:
         # POST処理: APIプロバイダーの切り替え
         if request.method == 'POST':
-            action = request.form.get('action') # 追加: どのアクションか識別
+            action = request.form.get('action')
             print(f"Form action: {action}")  # デバッグ用ログ
 
             # 1. APIプロバイダーの切り替え処理
@@ -111,9 +173,9 @@ def manage():
                         new_setting = Setting(key='api_provider', value=provider)
                         db.add(new_setting)
                     db.commit()
-                    print(f"debug: commit successful for provider {provider}")  # デバッグ用ログ
+                    print(f"debug: commit successful for provider {provider}")
                 else:
-                    print(f"Invalid provider selected: {provider}")  # デバッグ用ログ
+                    print(f"Invalid provider selected: {provider}")
 
             # 2. プロンプトの編集処理
             elif action == 'save_prompt':
@@ -124,21 +186,38 @@ def manage():
                     if prompt:
                         prompt.template_text = prompt_text
                         db.commit()
-                        print(f"debug: commit successful for provider {prompt}")  # デバッグ用ログ
-                        
-
+                        print(f"debug: commit successful for prompt")
+            
+            # ▼▼▼【新規】3. クレジット残高の設定処理 ▼▼▼
+            elif action == 'save_credit':
+                new_credit_str = request.form.get('credit_amount')
+                try:
+                    # 数値かチェックし、小数点以下2桁の文字列に変換
+                    new_credit = round(float(new_credit_str), 2)
+                    setting = get_or_create_credit_setting(db)
+                    setting.value = str(new_credit)
+                    db.commit()
+                    print(f"debug: commit successful for credit {new_credit}")
+                except (ValueError, TypeError):
+                    print(f"Invalid credit amount: {new_credit_str}")
+                
             return redirect(url_for('manage')) # 処理後にリダイレクト
 
         # GET処理: ページ表示
         current_provider = get_current_provider(db)
         current_prompt = get_current_prompt(db)
         
+        # ▼▼▼【修正点】クレジット設定を読み込み (なければここで挿入される) ▼▼▼
+        credit_setting = get_or_create_credit_setting(db)
+        current_credit = float(credit_setting.value) # ここで current_credit を定義
+        
         return render_template("manage.html", 
                                current_provider=current_provider, 
-                               default_prompt=current_prompt.template_text)
+                               default_prompt=current_prompt.template_text,
+                               current_credit=current_credit) # ★★★ ここで渡す ★★★
     finally:
         db.close()
-
+        
 # --- オンデマンドAI分析の実行 ---
 @app.route('/analyze/<int:post_id>', methods=['POST'])
 def analyze_post(post_id):
@@ -270,6 +349,9 @@ def analyze_batch():
         # コスト計算
         total_cost = calculate_cost(ANALYSIS_MODEL, usage_data)
 
+        # クレジット残高を更新
+        new_balance = update_credit_balance(db, total_cost)
+
         # 新しい AnalysisResult レコードを作成 (履歴として保存)
         current_prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
 
@@ -302,6 +384,7 @@ def analyze_batch():
             # ▼▼▼【修正点5】コスト情報をレスポンスに追加 ▼▼▼
             "model": ANALYSIS_MODEL,
             "cost_usd": total_cost,
+            "new_balance_usd": new_balance, # 新しい残高をレスポンスに追加
             "usage": usage_data # 使用量（トークン数）も返す
         })
 
