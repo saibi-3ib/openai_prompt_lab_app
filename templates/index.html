@@ -363,16 +363,23 @@
                             const result = await response.json();
                             
                             if (response.ok && result.status === 'success') {
+                                const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2);
+                                
+                                // コスト表示用の文字列
+                                const costInfo = result.cost_usd 
+                                    ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})`
+                                    : 'コスト情報なし';
+
                                 resultDisplay.innerHTML = `
                                     <p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p>
-                                    <p class="mt-2 font-semibold text-gray-300">概要:</p>
+                                    <p class="mt-2 text-sm">コスト: ${costInfo}</p>
+                                    <p class="mt-3 font-semibold text-gray-300">概要:</p>
                                     <p class="text-sm italic">${result.summary}</p>
-                                    <p class="mt-3 font-semibold text-gray-300">生JSON:</p>
-                                    <pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${JSON.stringify(result.raw_json, null, 2)}</pre>
+                                    <p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p>
+                                    <pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre>
                                     <p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>
                                 `;
                             } else { 
-                                const errorMessage = result.message || '不明なエラーが発生しました。';
                                 throw new Error(`APIエラー: ${errorMessage}`);
                             }
 

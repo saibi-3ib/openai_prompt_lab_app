@@ -17,6 +17,35 @@ client_openai = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else Non
 # プロンプト編集機能のための初期プロンプト名
 DEFAULT_PROMPT_KEY = "default_summary"
 
+
+# --- OpenAI コスト計算定数と関数 ---
+
+# 2024年10月時点の OpenAI 公開価格 (USD/1Mトークン) - 概算値
+# ※価格は変動します。必要に応じて調整してください。
+COST_PER_MILLION = {
+    "gpt-4o-mini": {"input": 0.15, "output": 0.60},
+    "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
+    # 他のモデルもここに追加可能
+}
+
+def calculate_cost(model_name: str, usage: dict) -> float:
+    """トークン使用量から概算コスト (USD) を計算する"""
+    if model_name not in COST_PER_MILLION:
+        print(f"Warning: Cost data for model {model_name} is missing.")
+        return 0.0
+
+    input_cost = COST_PER_MILLION[model_name]["input"]
+    output_cost = COST_PER_MILLION[model_name]["output"]
+
+    # トークン数を100万で割り、単価をかける
+    total_cost = (usage.get("prompt_tokens", 0) / 1_000_000) * input_cost + \
+                 (usage.get("completion_tokens", 0) / 1_000_000) * output_cost
+    
+    # 小数点以下8桁で丸めて返す
+    return round(total_cost, 8)
+
+
+
 # --- DB操作ヘルパー関数 ---
 def get_current_provider(db):
     """DBから現在のAPIプロバイダー設定を取得する"""
@@ -213,23 +242,33 @@ def analyze_batch():
         full_prompt = full_prompt.replace("{text}", "[警告: {text} 変数は単数分析用です。{texts} を使用してください。]")
 
 
+        # 使用モデルの固定（UI実装までの仮措置）
+        ANALYSIS_MODEL = "gpt-3.5-turbo" # 当面はこのモデルで固定
+
         # 5. AI呼び出しの実行
         #    - 複数ポストの処理には、より高性能なモデル (gpt-4o-miniなど) を推奨しますが、
         #      まずは gpt-3.5-turbo でテストします。
         response = client_openai.chat.completions.create(
-            model="gpt-3.5-turbo",
+            model=ANALYSIS_MODEL, # 固定したモデル名を使用            
             response_format={"type": "json_object"},
             messages=[
                 {"role": "system", "content": "You are a helpful assistant designed to output JSON. You are analyzing multiple social media posts about investing. Your output must summarize the core sentiment and investment topics discussed across ALL provided posts."},
                 {"role": "user", "content": full_prompt}
             ]
         )
-        ai_result_str = response.choices[0].message.content
 
-# 6. JSON結果のパースと保存 (修正後のコード)
+        ai_result_str = response.choices[0].message.content
+        
+        # トークン使用量を取得 
+        usage_data = response.usage.model_dump() # トークン使用量の辞書
+
+        # 6. JSON結果のパースと保存 (修正後のコード)
         ai_result_json = json.loads(ai_result_str)
         # summary のパースは引き続き行い、extracted_summary に格納する
         summary = ai_result_json.get("summary", "Summary not available.")
+
+        # コスト計算
+        total_cost = calculate_cost(ANALYSIS_MODEL, usage_data)
 
         # 新しい AnalysisResult レコードを作成 (履歴として保存)
         current_prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
@@ -239,9 +278,12 @@ def analyze_batch():
             # ▼▼▼ 修正点: raw_json_response に AIからの生文字列全体を保存 ▼▼▼
             raw_json_response = ai_result_str, 
             # ▼▼▼ 修正点: extracted_summary にパースした summary の値を保存 ▼▼▼
-            extracted_summary = summary
+            extracted_summary = summary,
+            # ▼▼▼【修正点4】モデルとコストの保存 ▼▼▼
+            ai_model = ANALYSIS_MODEL,
+            cost_usd = total_cost            
         )
-                
+
         # 7. 多対多の関連付け
         for post in posts:
             new_result.posts.append(post) # 選択された全ての投稿をリンク
@@ -255,7 +297,12 @@ def analyze_batch():
             "status": "success", 
             "summary": summary, 
             "analyzed_count": len(post_ids),
-            "result_id": new_result.id
+            "result_id": new_result.id,
+            "raw_json": ai_result_str,
+            # ▼▼▼【修正点5】コスト情報をレスポンスに追加 ▼▼▼
+            "model": ANALYSIS_MODEL,
+            "cost_usd": total_cost,
+            "usage": usage_data # 使用量（トークン数）も返す
         })
 
     except Exception as e:
