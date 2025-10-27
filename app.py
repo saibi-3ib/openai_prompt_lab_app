@@ -1,8 +1,14 @@
 import os
 import json
-import requests # API呼び出しのため追加
-from flask import Flask, render_template, request, redirect, url_for, jsonify
-from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult # 新しいモデルをインポート
+import requests 
+# ▼▼▼ 以下を追加 ▼▼▼
+from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, get_flashed_messages
+from sqlalchemy.exc import IntegrityError # 重複エラー検出のため
+from dateutil.parser import parse # ISO形式の日時文字列をパースするため
+import io # アップロードされたファイルをテキストとして読み込むため
+# ▲▲▲ 追加ここまで ▲▲▲
+
+from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
 from datetime import datetime, timezone
 import openai
 from dotenv import load_dotenv
@@ -10,6 +16,11 @@ from dotenv import load_dotenv
 load_dotenv()
 
 app = Flask(__name__)
+
+# ▼▼▼ Flashメッセージ機能に必要な Secret Key を設定 ▼▼▼
+# (セッション管理のために必須。ない場合は flash() がエラーになります)
+app.secret_key = os.environ.get('FLASK_SECRET_KEY', os.urandom(24))
+# ▲▲▲ 追加ここまで ▲▲▲
 
 # --- 設定値と初期化 ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -152,12 +163,20 @@ def index():
         credit_setting = get_or_create_credit_setting(db)
         current_credit = float(credit_setting.value)
         
+        # ▼▼▼【ここから追加】▼▼▼
+        # DBからユニークなアカウント名を取得する
+        # (username, ) というタプルのリストが返るので、[0]で取り出してリスト化
+        account_names_tuples = db.query(CollectedPost.username).distinct().order_by(CollectedPost.username).all()
+        available_accounts = [name[0] for name in account_names_tuples]
+        # ▲▲▲【ここまで追加】▲▲▲
+
         return render_template(
             "index.html", 
             posts=posts, 
             current_provider=current_provider,
             current_credit=current_credit,
-            available_models=AVAILABLE_MODELS
+            available_models=AVAILABLE_MODELS,
+            available_accounts=available_accounts
         )
     finally:
         db.close()
@@ -212,7 +231,92 @@ def manage():
                     print(f"debug: commit successful for credit {new_credit}")
                 except (ValueError, TypeError):
                     print(f"Invalid credit amount: {new_credit_str}")
+
+            # ▼▼▼【新規】JSON Linesファイルの一括インポート処理 ▼▼▼
+            elif action == 'import_jsonl':
+                if 'jsonl_file' not in request.files:
+                    flash('ファイルがリクエストに含まれていません。', 'error')
+                    return redirect(url_for('manage'))
                 
+                file = request.files['jsonl_file']
+                
+                if file.filename == '':
+                    flash('ファイルが選択されていません。', 'error')
+                    return redirect(url_for('manage'))
+
+                if file and file.filename.endswith('.txt'):
+                    try:
+                        # ファイルをテキストとして読み込む
+                        stream = io.StringIO(file.stream.read().decode("UTF-8"), newline=None)
+                        lines = stream.readlines()
+                        
+                        added_count = 0
+                        skipped_count = 0
+                        error_count = 0
+
+                        for line in lines:
+                            if not line.strip(): # 空行はスキップ
+                                continue
+                            
+                            try:
+                                post_data = json.loads(line)
+                                
+                                # 必須フィールドのチェック
+                                post_id = post_data.get('post_id')
+                                original_text = post_data.get('original_text')
+                                username = post_data.get('username')
+                                posted_at_str = post_data.get('posted_at')
+                                
+                                if not post_id or not username or not posted_at_str:
+                                     print(f"Skipping line (missing data): {line}")
+                                     error_count += 1
+                                     continue
+
+                                # 投稿日時 (posted_at) をISO文字列からdatetimeオブジェクトに変換
+                                # (parse関数はタイムゾーン情報も正しく処理できる)
+                                posted_at_dt = parse(posted_at_str)
+
+                                # DBに新しい投稿として作成
+                                new_post = CollectedPost(
+                                    username=username,
+                                    post_id=post_id, # 仮ID (重複チェックに使用)
+                                    original_text=original_text,
+                                    source_url=post_data.get('source_url', ''), # URLは空の場合もある
+                                    posted_at=posted_at_dt,
+                                    like_count=int(post_data.get('like_count', 0)),
+                                    retweet_count=int(post_data.get('retweet_count', 0)),
+                                    created_at=datetime.now(timezone.utc)
+                                )
+                                
+                                db.add(new_post)
+                                db.flush() # flushしてDBに送信 (commit前)
+                                added_count += 1
+
+                            except IntegrityError: # post_id の unique 制約違反
+                                db.rollback() # エラーをロールバック
+                                print(f"Skipping duplicate post_id: {post_data.get('post_id')}")
+                                skipped_count += 1
+                            except json.JSONDecodeError:
+                                db.rollback()
+                                print(f"Skipping invalid JSON line: {line}")
+                                error_count += 1
+                            except Exception as e:
+                                db.rollback()
+                                print(f"An unexpected error occurred processing line: {line}\nError: {e}")
+                                error_count += 1
+
+                        # すべての処理が終わったらコミット
+                        db.commit() 
+                        
+                        flash(f'インポート完了: {added_count} 件の新規投稿を追加, {skipped_count} 件の重複をスキップ, {error_count} 件のエラー。', 'success')
+
+                    except Exception as e:
+                        db.rollback()
+                        print(f"ファイル処理中にエラーが発生しました: {e}")
+                        flash(f'ファイル処理エラー: {e}', 'error')
+                else:
+                    flash('無効なファイル形式です。.txt ファイルをアップロードしてください。', 'error')
+
             return redirect(url_for('manage')) # 処理後にリダイレクト
 
         # GET処理: ページ表示
@@ -406,5 +510,80 @@ def analyze_batch():
         error_msg = f"AI一括分析処理中にエラーが発生しました: {str(e)}"
         print(error_msg)
         return jsonify({"status": "error", "message": f"AI analysis failed: {str(e)}", "details": error_msg}), 500
+    finally:
+        db.close()
+
+# --- APIルート: 投稿の動的絞り込み ---
+@app.route('/api/filter-posts', methods=['POST'])
+def filter_posts():
+    db = SessionLocal()
+    try:
+        # 1. フロントエンドから検索条件 (JSON) を受け取る
+        data = request.get_json()
+        
+        keyword = data.get('keyword')
+        accounts = data.get('accounts', []) # アカウント名のリスト
+        likes = data.get('likes')
+        rts = data.get('rts')
+
+        # 2. ベースとなるクエリを作成
+        #    DB全体を検索対象とする (limit(50) はここではかけない)
+        query = db.query(CollectedPost)
+
+        # 3. 条件に応じて動的にフィルタを追加
+        if keyword:
+            # 大文字/小文字を区別しない (ilike)
+            query = query.filter(CollectedPost.original_text.ilike(f"%%{keyword}%%"))
+        
+        if accounts: # リストが空でない場合
+            query = query.filter(CollectedPost.username.in_(accounts))
+
+        if likes is not None:
+            try:
+                # 文字列で来る可能性も考慮してintに変換
+                likes_int = int(likes)
+                if likes_int > 0:
+                    query = query.filter(CollectedPost.like_count >= likes_int)
+            except ValueError:
+                pass # 数値変換できなければ無視
+
+        if rts is not None:
+            try:
+                # 文字列で来る可能性も考慮してintに変換
+                rts_int = int(rts)
+                if rts_int > 0:
+                    query = query.filter(CollectedPost.retweet_count >= rts_int)
+            except ValueError:
+                pass # 数値変換できなければ無視
+
+        # 4. 絞り込み結果を最新順 (ID降順) で取得
+        filtered_posts = query.order_by(CollectedPost.id.desc()).all()
+
+        # 5. 結果をJSONシリアライズ可能な辞書のリストに変換
+        results_list = []
+        for post in filtered_posts:
+            results_list.append({
+                "id": post.id,
+                "username": post.username,
+                # 日時はISO 8601形式の文字列に変換 (JS側でパースするため)
+                "posted_at_iso": post.posted_at.isoformat() if post.posted_at else None, 
+                "original_text": post.original_text,
+                "source_url": post.source_url,
+                "like_count": post.like_count,
+                "retweet_count": post.retweet_count,
+                "link_summary": post.link_summary # 🔗 アイコン表示用
+            })
+
+        return jsonify({
+            "status": "success",
+            "count": len(results_list),
+            "posts": results_list
+        })
+
+    except Exception as e:
+        db.rollback()
+        error_msg = f"絞り込み処理中にエラーが発生しました: {str(e)}"
+        print(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
     finally:
         db.close()

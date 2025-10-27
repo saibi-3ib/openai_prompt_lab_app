@@ -16,6 +16,18 @@
     </header>
 
     <main class="container mx-auto px-6 py-8">
+        
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                <div class="mb-6">
+                {% for category, message in messages %}
+                    <div class="{% if category == 'error' %}bg-red-500{% else %}bg-green-500{% endif %} text-white p-4 rounded-lg shadow-md" role="alert">
+                        {{ message }}
+                    </div>
+                {% endfor %}
+                </div>
+            {% endif %}
+        {% endwith %}
 
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
             <h2 class="text-xl font-semibold mb-4 text-blue-400">Worker APIプロバイダー切り替え</h2>
@@ -78,7 +90,29 @@
                 </button>
             </form>
         </div>
-
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-purple-400">データ一括インポート</h2>
+            <p class="text-gray-400 mb-4 text-sm">
+                Pythonスクリプトで生成したJSON Lines形式の `.txt` ファイルをアップロードして、投稿データをデータベースに一括インポートします。<br>
+                `post_id` が重複する投稿は自動的にスキップされます。
+            </p>
+            <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <div>
+                    <label for="jsonl_file" class="block text-gray-400 mb-2">JSON Lines (.txt) ファイルを選択</label>
+                    <input type="file" name="jsonl_file" id="jsonl_file"
+                           class="block w-full text-sm text-gray-300
+                                  file:mr-4 file:py-2 file:px-4
+                                  file:rounded-md file:border-0
+                                  file:font-semibold file:bg-purple-600
+                                  file:text-white hover:file:bg-purple-700
+                                  cursor-pointer"
+                           accept=".txt" required>
+                </div>
+                <button type="submit" name="action" value="import_jsonl" class="bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-4 rounded transition duration-200">
+                    インポート実行
+                </button>
+            </form>
+        </div>    
     </main>
 
 </body>

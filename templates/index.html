@@ -42,13 +42,12 @@
         
         /* === 下部ペインの入力欄の背景色統一 === */
         input, select, textarea,
+        #account-filter-btn, /* <-- 【追加】アカウント選択ボタン */
         #result-display { /* 結果表示エリアも */
             background-color: var(--color-base-bg) !important; /* ダークブルーで統一 */
             color: var(--color-text-primary);
-            border-color: var(--color-container-bg);
-        }
-        input::placeholder {
-            color: var(--color-text-secondary);
+            /* (変更) 枠線を明示的に指定 */
+            border: 1px solid var(--color-container-bg) !important;
         }
 
         /* === ヘッダー === */
@@ -87,11 +86,9 @@
 
         /* === ドロップダウンメニュー === */
         #account-filter-menu {
-             background-color: var(--color-container-bg);
-             border-color: var(--color-base-bg);
-        }
-        #account-filter-menu label:hover {
-            background-color: var(--color-base-bg);
+             /* (変更) メイン背景色(ダークブルー)にしてコントラストをつける */
+             background-color: var(--color-base-bg); 
+             border-color: var(--color-container-bg); /* 枠線はコンテナ色に */
         }
         
         /* === レイアウト (スクロール対応) === */
@@ -193,7 +190,7 @@
 
     <div class="layout-wrapper">
         
-        <div id="filter-pane" class="flex-shrink-0 border-b p-3 shadow-md z-10">
+        <div id="filter-pane" class="flex-shrink-0 border-b p-3 shadow-md z-20">
             <div class="flex items-center space-x-4">
                 <div class="flex-1">
                     <label for="filter-keyword" class="text-xs font-semibold text-gray-400">キーワード</label>
@@ -207,18 +204,19 @@
                     </button>
                     <div id="account-filter-menu" class="hidden absolute left-0 mt-1 w-full rounded shadow-lg z-20">
                         <ul class="max-h-48 overflow-y-auto p-2 space-y-1">
+                            {% for account_name in available_accounts %}
                             <li>
                                 <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
-                                    <input type="checkbox" class="form-checkbox bg-gray-800 border-gray-500 text-blue-500" value="Account1">
-                                    <span>Account1</span>
+                                    <input type="checkbox" class="account-filter-checkbox form-checkbox bg-gray-800 border-gray-500 text-blue-500" 
+                                           value="{{ account_name }}">
+                                    <span>{{ account_name }}</span>
                                 </label>
                             </li>
+                            {% else %}
                             <li>
-                                <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
-                                    <input type="checkbox" class="form-checkbox bg-gray-800 border-gray-500 text-blue-500" value="Account2">
-                                    <span>Account2</span>
-                                </label>
+                                <span class="px-2 py-1 text-sm text-gray-400 italic">(アカウントデータがありません)</span>
                             </li>
+                            {% endfor %}
                         </ul>
                     </div>
                 </div>
@@ -321,134 +319,388 @@
                     </div>
                 </div>
             </div> 
-        </div> </div> <script>
-        // (JavaScript は変更ありません。前回と同じです)
-        document.addEventListener('DOMContentLoaded', () => {
-            
-            // --- 1. URLリンク化 & もっと見る機能 ---
-            try {
-                if (typeof Autolinker === 'undefined') { throw new Error("Autolinker not defined"); }
-                const autolinker = new Autolinker({ urls: { scheme: true, tld: true }, email: false, phone: false, mention: 'twitter', hashtag: 'twitter', newWindow: true, stripPrefix: false, className: 'autolinked' });
-                const maxLines = 3; const lineHeight = 1.5 * 14; const maxHeight = lineHeight * maxLines;
-                document.querySelectorAll('.post-text').forEach(el => {
-                    const rawText = el.dataset.originalText;
-                    if (!rawText || rawText.trim() === '' || rawText.toLowerCase() === 'none' || rawText.toLowerCase() === 'null') { el.innerHTML = '<span class="text-gray-500 italic">[本文なし]</span>'; return; }
-                    let originalText = rawText;
-                    try {
-                        const TmpElement = document.createElement('textarea'); TmpElement.innerHTML = originalText; originalText = TmpElement.value;
-                        const linkedHtml = autolinker.link(originalText); el.innerHTML = linkedHtml;
-                        if (el.scrollHeight > maxHeight && el.scrollHeight > 0) {
-                            el.classList.add('truncated'); const toggleBtn = document.createElement('span'); toggleBtn.textContent = '...もっと見る'; toggleBtn.className = 'toggle-truncate-btn';
-                            toggleBtn.addEventListener('click', (e) => { e.stopPropagation(); if (el.classList.contains('truncated')) { el.classList.remove('truncated'); toggleBtn.textContent = '閉じる'; } else { el.classList.add('truncated'); toggleBtn.textContent = '...もっと見る'; } });
-                            el.parentNode.appendChild(toggleBtn);
-                        }
-                    } catch (innerError) { console.error("Error processing post text (ID: " + el.closest('.post-item')?.dataset.postId + "):", innerError); el.innerHTML = '<span class="text-red-500">[本文の表示に失敗しました]</span>'; }
-                });
-            } catch (error) { console.error("Fatal error during post text processing:", error); }
-            
-            // --- 2. Shift選択機能 ---
-            const selectedPostIds = new Set();
-            try {
-                const postListContainer = document.getElementById('post-list-container'); const postItems = Array.from(document.querySelectorAll('.post-item')); const selectionCounter = document.getElementById('selection-counter'); const batchBtnCounter = document.getElementById('batch-btn-counter'); const deselectAllBtn = document.getElementById('deselect-all-btn');
-                if (!postListContainer || !selectionCounter || !batchBtnCounter || !deselectAllBtn) { console.error("Selection UI elements not found."); } else {
-                    let lastClickedIndex = -1; function updateSelectionUI() { const count = selectedPostIds.size; selectionCounter.textContent = `${count}件 選択中`; batchBtnCounter.textContent = `${count}`; postItems.forEach(item => { item.classList.toggle('selected', selectedPostIds.has(item.dataset.postId)); }); }
-                    postListContainer.addEventListener('click', (e) => { const clickedItem = e.target.closest('.post-item'); if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn')) { return; } const clickedPostId = clickedItem.dataset.postId; const clickedIndex = parseInt(clickedItem.dataset.index, 10); if (e.shiftKey && lastClickedIndex !== -1) { const start = Math.min(lastClickedIndex, clickedIndex); const end = Math.max(lastClickedIndex, clickedIndex); for (let i = start; i <= end; i++) { postItems[i] && selectedPostIds.add(postItems[i].dataset.postId); } } else { selectedPostIds.has(clickedPostId) ? selectedPostIds.delete(clickedPostId) : selectedPostIds.add(clickedPostId); } lastClickedIndex = clickedIndex; updateSelectionUI(); });
-                    deselectAllBtn.addEventListener('click', () => { selectedPostIds.clear(); lastClickedIndex = -1; updateSelectionUI(); });
-                }
-            } catch (error) { console.error("Fatal error during selection setup:", error); }
-            
-            // --- 3. 一括分析実行ボタン (API連携版) ---
-            try {
-                const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
-                const resultDisplay = document.getElementById('result-display');
-                const creditMonitor = document.getElementById('credit-monitor-display');
-                
-                // ▼▼▼ モデル選択要素を取得 ▼▼▼
-                const modelSelect = document.getElementById('model-select');
-                // ▲▲▲ モデル選択要素を取得 ▲▲▲
+        </div> </div> 
+<script>
+    document.addEventListener('DOMContentLoaded', () => {
+        
+        // --- 0. グローバル変数とUI要素のキャッシュ ---
+        const postListContainer = document.getElementById('post-list-container');
+        const selectionCounter = document.getElementById('selection-counter');
+        const batchBtnCounter = document.getElementById('batch-btn-counter');
+        const deselectAllBtn = document.getElementById('deselect-all-btn');
+        const creditMonitor = document.getElementById('credit-monitor-display');
+        
+        // フィルターUI要素
+        const filterKeywordInput = document.getElementById('filter-keyword');
+        const accountFilterBtn = document.getElementById('account-filter-btn');
+        const accountFilterLabel = document.getElementById('account-filter-label');
+        const accountFilterMenu = document.getElementById('account-filter-menu');
+        const filterLikesInput = document.getElementById('filter-likes');
+        const filterRtsInput = document.getElementById('filter-rts');
+        const filterRunBtn = document.getElementById('filter-run-btn');
+        const filterResetBtn = document.getElementById('filter-reset-btn');
 
-                if (analyzeBatchBtn && modelSelect) { // modelSelect もチェック
-                    analyzeBatchBtn.addEventListener('click', async () => {
-                        const postItems = Array.from(document.querySelectorAll('.post-item.selected'));
-                        const postIds = postItems.map(item => item.dataset.postId);
-                        const promptText = document.getElementById('prompt-editor').value;
-                        
-                        // ▼▼▼ 選択されたモデル名を取得 ▼▼▼
-                        const selectedModelName = modelSelect.value;
-                        // ▲▲▲ 選択されたモデル名を取得 ▲▲▲
-
-                        if (postIds.length === 0) { alert('分析する投稿を1件以上選択してください。'); return; }
-                        if (!promptText) { alert('プロンプトを入力してください。'); return; }
-                        
-                        analyzeBatchBtn.disabled = true;
-                        analyzeBatchBtn.innerHTML = '⏱️ 分析中...';
-                        resultDisplay.innerHTML = `<p class="text-yellow-400">分析を開始します (${selectedModelName} 使用)... AI応答を待機中...</p>`;
-                        
-                        try {
-                            const response = await fetch('/api/analyze-batch', {
-                                method: 'POST',
-                                headers: {
-                                    'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify({
-                                    postIds: postIds.map(id => parseInt(id, 10)),
-                                    promptText: promptText,
-                                    // ▼▼▼ モデル名をAPIに送信 ▼▼▼
-                                    modelName: selectedModelName 
-                                    // ▲▲▲ モデル名をAPIに送信 ▲▲▲
-                                })
-                            });
-
-                            const result = await response.json();
-                            
-                            if (response.ok && result.status === 'success') {
-                                // 残高更新 (変更なし)
-                                if (creditMonitor && result.new_balance_usd !== undefined) {
-                                    creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6);
-                                }
-                                // 結果表示 (変更なし)
-                                const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2);
-                                const costInfo = result.cost_usd ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})` : 'コスト情報なし';
-                                resultDisplay.innerHTML = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p><p class="mt-2 text-sm">コスト: ${costInfo}</p><p class="mt-3 font-semibold text-gray-300">概要:</p><p class="text-sm italic">${result.summary}</p><p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p><pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre><p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`;
-                            } else { 
-                                const errorMessage = result.message || '不明なエラー';
-                                throw new Error(`APIエラー: ${errorMessage}`);
-                            }
-
-                        } catch (error) {
-                            // (エラー処理は変更なし)
-                            console.error('一括分析エラー:', error);
-                            resultDisplay.innerHTML = `<p class="text-red-400 font-bold">❌ 分析エラー</p><pre class="text-sm mt-1">${error.message}</pre>`;
-                        } finally {
-                            // (finallyブロックは変更なし)
-                            analyzeBatchBtn.disabled = false;
-                            analyzeBatchBtn.innerHTML = `<span id="batch-btn-counter">${postIds.length}</span> 件をまとめて分析実行`;
-                            // ボタン内のカウンターも更新 (念のため)
-                            const batchBtnCounter = document.getElementById('batch-btn-counter'); 
-                            if(batchBtnCounter) batchBtnCounter.textContent = postIds.length;
-                        }
-                    
-                    }); 
-                } else {
-                    console.error("Analyze button or model select element not found.");
-                }
-            } catch (error) {
-                console.error("Fatal error during batch analysis setup:", error);
-            }        
-                
-            // --- 4. アカウント絞り込みドロップダウン ---
-            try {
-                const accountFilterBtn = document.getElementById('account-filter-btn'); const accountFilterMenu = document.getElementById('account-filter-menu');
-                if (accountFilterBtn && accountFilterMenu) { accountFilterBtn.addEventListener('click', (e) => { e.stopPropagation(); accountFilterMenu.classList.toggle('hidden'); }); document.addEventListener('click', (e) => { if (!accountFilterBtn.contains(e.target) && !accountFilterMenu.contains(e.target)) { accountFilterMenu.classList.add('hidden'); } }); }
-            } catch (error) { console.error("Fatal error during filter dropdown setup:", error); }
-            
-            // --- 5. 下部ペイン折りたたみ機能 ---
-            try {
-                const wrapper = document.getElementById('action-pane-wrapper'); const toggleBtn = document.getElementById('action-pane-toggle'); const icon1 = document.getElementById('toggle-icon'); const icon2 = document.getElementById('toggle-icon-2');
-                if (toggleBtn && wrapper) { toggleBtn.addEventListener('click', () => { const isCollapsed = wrapper.classList.toggle('collapsed'); if (isCollapsed) { icon1.textContent = '▲'; icon2.textContent = '▲'; } else { icon1.textContent = '▼'; icon2.textContent = '▼'; } }); }
-            } catch (error) { console.error("Fatal error during collapsible pane setup:", error); }
+        // 選択状態管理
+        const selectedPostIds = new Set();
+        let lastClickedIndex = -1;
+        
+        // Autolinkerの初期化 (グローバルでアクセス可能に)
+        const autolinker = new Autolinker({
+            urls: { scheme: true, tld: true },
+            email: false, phone: false, mention: 'twitter', hashtag: 'twitter',
+            newWindow: true, stripPrefix: false, className: 'autolinked'
         });
-    </script>
+
+
+        // --- 1. 投稿リストの動的レンダリング関数 ---
+        // (APIから取得した posts 配列を元にHTMLを構築する)
+        function renderPostList(posts) {
+            // 既存のリストを全クリア
+            postListContainer.innerHTML = '';
+            
+            if (posts.length === 0) {
+                postListContainer.innerHTML = '<p class="text-gray-400 text-center p-4">該当する投稿はありません。</p>';
+                return;
+            }
+
+            // posts 配列から各投稿をレンダリング
+            posts.forEach((post, index) => {
+                // (重要) JS側で日付文字列をパースしてフォーマット
+                let formattedDate = 'N/A';
+                if (post.posted_at_iso) {
+                    try {
+                        const date = new Date(post.posted_at_iso);
+                        // YYYY-MM-DD HH:MM 形式にフォーマット (簡易版)
+                        formattedDate = date.getFullYear() + '-' +
+                                      ('0' + (date.getMonth() + 1)).slice(-2) + '-' +
+                                      ('0' + date.getDate()).slice(-2) + ' ' +
+                                      ('0' + date.getHours()).slice(-2) + ':' +
+                                      ('0' + date.getMinutes()).slice(-2);
+                    } catch (e) {
+                        console.warn('Invalid date format:', post.posted_at_iso);
+                    }
+                }
+                
+                // 🔗 アイコンの表示 (link_summary が存在する場合)
+                const linkIcon = post.link_summary ? '<span class="text-yellow-500">🔗</span>' : '';
+
+                const postHtml = `
+                <div id="post-${post.id}" 
+                     class="post-item rounded shadow p-2 border hover:bg-gray-700 transition duration-150 ease-in-out cursor-pointer"
+                     data-post-id="${post.id}"
+                     data-index="${index}">
+                    
+                    <div class="flex justify-between items-start">
+                        <div class="flex items-center space-x-3">
+                            <span class="font-bold text-sm">${post.username}</span>
+                            <span class="text-xs text-gray-400">${formattedDate}</span>
+                        </div>
+                        <div class="flex space-x-3 text-xs text-gray-400 text-right flex-shrink-0">
+                            <span>❤️ ${post.like_count}</span>
+                            <span>🔁 ${post.retweet_count}</span>
+                            ${linkIcon}
+                        </div>
+                    </div>
+
+                    <div class="mt-1">
+                        <div class="post-text text-sm leading-snug"
+                             data-original-text="${escapeHtml(post.original_text || '')}">
+                        </div>
+                    </div>
+                    <div class="mt-1 text-right">
+                        <a href="${post.source_url}" target="_blank" class="text-xs hover:underline">元の投稿 &rarr;</a>
+                    </div>
+                </div>
+                `;
+                postListContainer.insertAdjacentHTML('beforeend', postHtml);
+            });
+
+            // HTML挿入後に、テキスト処理 (Autolinker, もっと見る) を実行
+            processPostTextDOM();
+            
+            // 選択状態をUIに再反映 (選択がリセットされるため)
+            // (今回は簡略化のため、絞り込み実行時に選択は解除する)
+            clearSelection();
+        }
+
+        // --- 2. 投稿テキスト処理 (Autolinker & もっと見る) ---
+        function processPostTextDOM() {
+            const maxLines = 3; 
+            const lineHeight = 1.5 * 14; // 1.5 * 14px
+            const maxHeight = lineHeight * maxLines;
+
+            document.querySelectorAll('.post-text').forEach(el => {
+                const rawText = el.dataset.originalText;
+                if (!rawText || rawText.trim() === '' || rawText.toLowerCase() === 'none' || rawText.toLowerCase() === 'null') {
+                    el.innerHTML = '<span class="text-gray-500 italic">[本文なし]</span>';
+                    return;
+                }
+                
+                let originalText = rawText;
+                try {
+                    // HTMLエンティティをデコード (簡易版)
+                    const TmpElement = document.createElement('textarea');
+                    TmpElement.innerHTML = originalText;
+                    originalText = TmpElement.value;
+
+                    // Autolinker適用
+                    const linkedHtml = autolinker.link(originalText);
+                    el.innerHTML = linkedHtml;
+
+                    // もっと見るボタンの追加 (高さチェック)
+                    if (el.scrollHeight > maxHeight && el.scrollHeight > 0) {
+                        el.classList.add('truncated');
+                        const toggleBtn = document.createElement('span');
+                        toggleBtn.textContent = '...もっと見る';
+                        toggleBtn.className = 'toggle-truncate-btn';
+                        
+                        toggleBtn.addEventListener('click', (e) => {
+                            e.stopPropagation(); // 親のクリック(選択)イベントを発火させない
+                            if (el.classList.contains('truncated')) {
+                                el.classList.remove('truncated');
+                                toggleBtn.textContent = '閉じる';
+                            } else {
+                                el.classList.add('truncated');
+                                toggleBtn.textContent = '...もっと見る';
+                            }
+                        });
+                        el.parentNode.appendChild(toggleBtn);
+                    }
+                } catch (innerError) {
+                    console.error("Error processing post text:", innerError);
+                    el.innerHTML = '<span class="text-red-500">[本文の表示に失敗しました]</span>';
+                }
+            });
+        }
+        
+        // --- 3. 選択機能 (Shift選択, UI更新) ---
+        function updateSelectionUI() {
+            const count = selectedPostIds.size;
+            selectionCounter.textContent = `${count}件 選択中`;
+            batchBtnCounter.textContent = `${count}`;
+            
+            // postItems は動的に変わるので、都度クエリする
+            document.querySelectorAll('.post-item').forEach(item => {
+                item.classList.toggle('selected', selectedPostIds.has(item.dataset.postId));
+            });
+        }
+
+        function clearSelection() {
+            selectedPostIds.clear();
+            lastClickedIndex = -1;
+            updateSelectionUI();
+        }
+
+        // Shift選択イベントリスナー (コンテナに委任)
+        postListContainer.addEventListener('click', (e) => {
+            const clickedItem = e.target.closest('.post-item');
+            
+            // リンクや「もっと見る」ボタンをクリックした場合は選択処理をしない
+            if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn')) {
+                return;
+            }
+            
+            const clickedPostId = clickedItem.dataset.postId;
+            const clickedIndex = parseInt(clickedItem.dataset.index, 10);
+
+            if (e.shiftKey && lastClickedIndex !== -1) {
+                // Shift選択
+                const postItems = Array.from(document.querySelectorAll('.post-item'));
+                const start = Math.min(lastClickedIndex, clickedIndex);
+                const end = Math.max(lastClickedIndex, clickedIndex);
+                for (let i = start; i <= end; i++) {
+                    postItems[i] && selectedPostIds.add(postItems[i].dataset.postId);
+                }
+            } else {
+                // 通常選択 (トグル)
+                selectedPostIds.has(clickedPostId) ? selectedPostIds.delete(clickedPostId) : selectedPostIds.add(clickedPostId);
+            }
+            
+            lastClickedIndex = clickedIndex;
+            updateSelectionUI();
+        });
+
+        // 全選択解除ボタン
+        deselectAllBtn.addEventListener('click', clearSelection);
+
+        
+        // --- 4. 絞り込み機能 (API連携) ---
+        
+        // 「絞り込み」ボタンのイベントリスナー
+        filterRunBtn.addEventListener('click', async () => {
+            // 1. 検索条件を取得
+            const keyword = filterKeywordInput.value.trim();
+            const likes = filterLikesInput.value ? parseInt(filterLikesInput.value, 10) : null;
+            const rts = filterRtsInput.value ? parseInt(filterRtsInput.value, 10) : null;
+            
+            // 選択されたアカウント名のリストを取得
+            const selectedAccountCheckboxes = document.querySelectorAll('.account-filter-checkbox:checked');
+            const accounts = Array.from(selectedAccountCheckboxes).map(cb => cb.value);
+
+            // 2. ボタンのラベルを更新 (ユーザー要望)
+            if (accounts.length === 0) {
+                accountFilterLabel.textContent = 'すべてのアカウント';
+            } else {
+                accountFilterLabel.textContent = `${accounts.length}件のアカウント選択中`;
+            }
+            // ドロップダウンを閉じる
+            accountFilterMenu.classList.add('hidden');
+
+            // 3. APIにリクエスト
+            filterRunBtn.disabled = true;
+            filterRunBtn.textContent = '検索中...';
+            postListContainer.innerHTML = '<p class="text-gray-400 text-center p-4">データを検索しています...</p>';
+
+            try {
+                const response = await fetch('/api/filter-posts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        keyword: keyword,
+                        accounts: accounts,
+                        likes: likes,
+                        rts: rts
+                    })
+                });
+
+                if (!response.ok) {
+                    throw new Error(`APIエラー: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                
+                if (result.status === 'success') {
+                    // 4. APIの結果でリストを再レンダリング
+                    renderPostList(result.posts);
+                } else {
+                    throw new Error(result.message || '不明なサーバーエラー');
+                }
+
+            } catch (error) {
+                console.error('絞り込みエラー:', error);
+                postListContainer.innerHTML = `<p class="text-red-400 text-center p-4">エラー: ${error.message}</p>`;
+            } finally {
+                filterRunBtn.disabled = false;
+                filterRunBtn.textContent = '絞り込み';
+            }
+        });
+        
+        // 「リセット」ボタンのイベントリスナー
+        filterResetBtn.addEventListener('click', () => {
+            // 簡易的なリセット (ページリロード)
+            // (JSで初期状態に戻すより確実)
+            location.reload();
+        });
+
+        // アカウントフィルタードロップダウンの表示/非表示
+        accountFilterBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            accountFilterMenu.classList.toggle('hidden');
+        });
+        document.addEventListener('click', (e) => {
+            // ボタンとメニュー以外をクリックしたら閉じる
+            if (!accountFilterBtn.contains(e.target) && !accountFilterMenu.contains(e.target)) {
+                accountFilterMenu.classList.add('hidden');
+            }
+        });
+
+
+        // --- 5. 一括分析実行ボタン (API連携) ---
+        const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
+        const resultDisplay = document.getElementById('result-display');
+        const modelSelect = document.getElementById('model-select');
+
+        if (analyzeBatchBtn && modelSelect) {
+            analyzeBatchBtn.addEventListener('click', async () => {
+                // (注意) 選択されたIDは data-post-id (文字列) なので数値に変換
+                const postIds = Array.from(selectedPostIds).map(id => parseInt(id, 10));
+                const promptText = document.getElementById('prompt-editor').value;
+                const selectedModelName = modelSelect.value;
+
+                if (postIds.length === 0) { alert('分析する投稿を1件以上選択してください。'); return; }
+                if (!promptText) { alert('プロンプトを入力してください。'); return; }
+                
+                analyzeBatchBtn.disabled = true;
+                analyzeBatchBtn.innerHTML = '⏱️ 分析中...';
+                resultDisplay.innerHTML = `<p class="text-yellow-400">分析を開始します (${selectedModelName} 使用)... AI応答を待機中...</p>`;
+                
+                try {
+                    const response = await fetch('/api/analyze-batch', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            postIds: postIds, // 数値の配列
+                            promptText: promptText,
+                            modelName: selectedModelName 
+                        })
+                    });
+
+                    const result = await response.json();
+                    
+                    if (response.ok && result.status === 'success') {
+                        if (creditMonitor && result.new_balance_usd !== undefined) {
+                            creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6);
+                        }
+                        const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2);
+                        const costInfo = result.cost_usd ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})` : 'コスト情報なし';
+                        resultDisplay.innerHTML = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p><p class="mt-2 text-sm">コスト: ${costInfo}</p><p class="mt-3 font-semibold text-gray-300">概要:</p><p class="text-sm italic">${result.summary}</p><p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p><pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre><p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`;
+                    } else { 
+                        const errorMessage = result.message || '不明なエラー';
+                        throw new Error(`APIエラー: ${errorMessage}`);
+                    }
+
+                } catch (error) {
+                    console.error('一括分析エラー:', error);
+                    resultDisplay.innerHTML = `<p class="text-red-400 font-bold">❌ 分析エラー</p><pre class="text-sm mt-1">${error.message}</pre>`;
+                } finally {
+                    analyzeBatchBtn.disabled = false;
+                    // ボタン内のカウンターも更新
+                    const count = selectedPostIds.size;
+                    analyzeBatchBtn.innerHTML = `<span id="batch-btn-counter">${count}</span> 件をまとめて分析実行`;
+                    // (DOM再生成に備えて batchBtnCounter も更新)
+                    const newBatchBtnCounter = document.getElementById('batch-btn-counter'); 
+                    if(newBatchBtnCounter) newBatchBtnCounter.textContent = count;
+                }
+            }); 
+        } else {
+            console.error("Analyze button or model select element not found.");
+        }
+            
+        // --- 6. 下部ペイン折りたたみ機能 ---
+        try {
+            const wrapper = document.getElementById('action-pane-wrapper');
+            const toggleBtn = document.getElementById('action-pane-toggle');
+            const icon1 = document.getElementById('toggle-icon');
+            const icon2 = document.getElementById('toggle-icon-2');
+            
+            if (toggleBtn && wrapper) {
+                toggleBtn.addEventListener('click', () => {
+                    const isCollapsed = wrapper.classList.toggle('collapsed');
+                    if (isCollapsed) {
+                        icon1.textContent = '▲'; icon2.textContent = '▲';
+                    } else {
+                        icon1.textContent = '▼'; icon2.textContent = '▼';
+                    }
+                });
+            }
+        } catch (error) { console.error("Fatal error during collapsible pane setup:", error); }
+        
+        // --- 7. 初期読み込み時のテキスト処理 ---
+        // (最初の50件はサーバーサイドレンダリングされているため、それに対して処理を実行)
+        processPostTextDOM();
+
+        // --- 8. HTMLエスケープ用ヘルパー ---
+        function escapeHtml(str) {
+            if (!str) return '';
+            return str.replace(/"/g, '&quot;')
+                      .replace(/'/g, '&#39;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/\n/g, '&#10;'); // 改行もエンティティ化
+        }
+
+    });
+</script>
 
 </body>
 </html>
