@@ -8,9 +8,14 @@ from dateutil.parser import parse # ISO形式の日時文字列をパースす�
 import io # アップロードされたファイルをテキストとして読み込むため
 
 from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import openai
 from dotenv import load_dotenv
+
+import re
+import hashlib
+from typing import List, Set, Tuple, Dict
+
 
 load_dotenv()
 
@@ -105,6 +110,180 @@ def get_or_create_credit_setting(db, initial_value='20.000000') -> Setting:
         db.commit()
         return new_setting
     return setting
+
+# ▼▼▼【ここからパーサー関数を移植 (修正版)】▼▼▼
+def parse_relative_time(time_str: str) -> str:
+    """ 日本語の相対時間をISO 8601形式に変換（改善版） """
+    now = datetime.now(timezone.utc)
+    try:
+        time_str = time_str.strip()
+        if '分前' in time_str:
+            minutes = int(re.search(r'(\d+)分前', time_str).group(1))
+            post_time = now - timedelta(minutes=minutes)
+        elif '時間前' in time_str:
+            hours = int(re.search(r'(\d+)時間前', time_str).group(1))
+            post_time = now - timedelta(hours=hours)
+        elif '時間' in time_str: # 「前」がないパターン (例: "6時間")
+            hours = int(re.search(r'(\d+)時間', time_str).group(1))
+            post_time = now - timedelta(hours=hours)
+        elif '昨日' in time_str:
+            post_time = (now - timedelta(days=1)).replace(hour=12, minute=0, second=0, microsecond=0)
+        elif '日' in time_str and not ('月' in time_str or '年' in time_str): # 「X日」 (例: "1日", "3日")
+            days = int(re.search(r'(\d+)日', time_str).group(1))
+            post_time = now - timedelta(days=days)
+        elif re.match(r'^\d+月\d+日$', time_str): # "X月X日"
+            match = re.search(r'(\d+)月(\d+)日', time_str)
+            month = int(match.group(1))
+            day = int(match.group(2))
+            post_time = now.replace(month=month, day=day, hour=12, minute=0, second=0, microsecond=0)
+        elif '年' in time_str and '月' in time_str and '日' in time_str: # "X年X月X日"
+             match = re.search(r'(\d+)年(\d+)月(\d+)日', time_str)
+             year = int(match.group(1))
+             month = int(match.group(2))
+             day = int(match.group(3))
+             post_time = now.replace(year=year, month=month, day=day, hour=12, minute=0, second=0, microsecond=0)
+        elif re.match(r'^\d{4}/\d{1,2}/\d{1,2}$', time_str): # "YYYY/MM/DD"
+            post_time = datetime.strptime(time_str, '%Y/%m/%d').replace(tzinfo=timezone.utc)
+        else:
+             post_time = now
+        return post_time.strftime('%Y-%m-%dT%H:%M:%SZ')
+    except Exception as e:
+        print(f"[Parser Error] 時間文字列 '{time_str}' 解析失敗: {e}。")
+        return now.strftime('%Y-%m-%dT%H:%M:%SZ')
+
+def generate_pseudo_id(username: str, timestamp: str, text_snippet: str) -> str:
+    """ 投稿IDの代替となるハッシュ値を生成 """
+    # --- (↓ ここから4スペースのインデントが必須) ---
+    ts_stable = timestamp[:16] if len(timestamp) >= 16 else timestamp
+    snippet = text_snippet[:30] if text_snippet else "empty"
+    hash_input = f"{username}-{ts_stable}-{snippet}"
+    return hashlib.md5(hash_input.encode('utf-8')).hexdigest()[:10]
+    # --- (↑ ここまでインデント) ---
+
+def parse_threads_data_from_lines(lines: List[str], processed_ids_set: Set[str]) -> Tuple[List[Dict], int]:
+    """ 
+    (v14改) 生テキストの「行リスト」を受け取り、パース結果の「辞書リスト」を返す 
+    """
+    # --- (↓ ここから4スペースのインデントが必須) ---
+    if not lines:
+        print("[Parser Error] ファイルが空です。")
+        return [], 0
+
+    # --- アカウントID検出 ---
+    account_id = None
+    account_id_line_index = -1
+    account_id_pattern_strict = r'^[\w.]{5,30}$'
+    for i in range(min(15, len(lines))):
+        stripped_line = lines[i]
+        if re.fullmatch(account_id_pattern_strict, stripped_line):
+             account_id = stripped_line
+             account_id_line_index = i
+             print(f"[Parser] アカウントID候補: '{account_id}' を {i+1} 行目で検出。")
+             break
+
+    if not account_id:
+        print("[Parser Error] ファイルの先頭15行からアカウントID候補が見つかりませんでした。")
+        return [], 0
+    
+    parsed_posts_data = [] # (変更) JSON文字列ではなく辞書を格納
+    newly_added_count = 0
+    
+    # --- タイムスタンプ行を基準に投稿ブロックを特定 ---
+    time_pattern = r'^(\d+分前|\d+時間前|\d+時間|\d+日|昨日|\d+月\d+日|\d+年\d+月\d+日|\d{4}/\d{1,2}/\d{1,2})$'
+    post_starts = [] 
+    search_start_line = account_id_line_index
+    
+    i = search_start_line
+    while i < len(lines) - 1:
+        current_line_stripped = lines[i]
+        next_line_stripped = lines[i+1]
+
+        # パターンA
+        if current_line_stripped == account_id and re.match(time_pattern, next_line_stripped):
+            post_starts.append((i, i + 1)) 
+            i += 1 
+            continue
+        # パターンB
+        elif re.match(r'^\d+$', current_line_stripped) and i + 4 < len(lines):
+             if lines[i+1] == '/' and \
+                re.match(r'^\d+$', lines[i+2]) and \
+                lines[i+3] == account_id and \
+                re.match(time_pattern, lines[i+4]):
+                 post_starts.append((i + 3, i + 4)) 
+                 i += 4 
+                 continue
+        i += 1 
+
+    if not post_starts:
+        print("[Parser Error] 有効な投稿開始パターンが見つかりません。")
+        return [], 0
+
+    print(f"[Parser] {len(post_starts)} 件の投稿開始点を検出しました。")
+
+    # --- 各開始点から投稿データを抽出 ---
+    for i in range(len(post_starts)):
+        account_id_idx, timestamp_idx = post_starts[i]
+        timestamp_str = lines[timestamp_idx]
+        
+        end_line_idx = post_starts[i+1][0] -1 if i + 1 < len(post_starts) else len(lines) - 1
+        extract_start_idx = timestamp_idx + 1
+        post_block_lines = lines[extract_start_idx : end_line_idx + 1]
+
+        if not post_block_lines: continue
+
+        data = {
+            "username": account_id,
+            "posted_at": parse_relative_time(timestamp_str),
+            "like_count": 0,
+            "retweet_count": 0
+        }
+
+        body_lines = []
+        thread_num_pattern = r'^\d+\s*/\s*\d+$' # "1 / 2"
+
+        for line in post_block_lines:
+            if not line: continue
+            if re.match(r'いいね！', line): break
+            if re.search(r'件の返信', line): break
+            if re.match(thread_num_pattern, line): break
+            if line.startswith('http://') or line.startswith('https://'): break
+            if line.startswith('amzn.to') or line.startswith('a.r10.to'): break
+            if "翻訳" not in line and line != account_id: 
+                 body_lines.append(line)
+
+        post_text = "\n".join(body_lines).strip()
+        data["original_text"] = post_text
+        
+        for line in reversed(post_block_lines):
+            if not data["like_count"]: 
+                like_match = re.search(r'いいね！([\d,]+)', line)
+                if like_match: data["like_count"] = int(like_match.group(1).replace(',', ''))
+            if not data["retweet_count"]: 
+                 reply_match = re.search(r'([\d,]+)\s*件の返信', line)
+                 if reply_match: data["retweet_count"] = int(reply_match.group(1).replace(',', ''))
+            if data["like_count"] > 0 and data["retweet_count"] > 0:
+                 break 
+
+        pseudo_id = generate_pseudo_id(account_id, data["posted_at"], post_text)
+        data["post_id"] = pseudo_id
+        data["source_url"] = "" # (生テキストからはURLは取得できない)
+
+        if pseudo_id not in processed_ids_set:
+            if data["original_text"]: # 本文が空でないもののみ
+                parsed_posts_data.append(data) # (変更) D辞書を直接追加
+                processed_ids_set.add(pseudo_id) # (重要) DB保存前にセットに追加
+                newly_added_count += 1
+            else:
+                 print(f"[Parser] post_id {pseudo_id} は本文が空のためスキップ")
+        else:
+             print(f"[Parser] post_id {pseudo_id} は処理済(重複)のためスキップ")
+
+    print(f"[Parser] 処理完了: {newly_added_count} 件の新規投稿を抽出")
+    
+    # (変更) 辞書のリストと件数を返す
+    return parsed_posts_data, newly_added_count 
+    # --- (↑ ここまでインデント) ---
+# ▲▲▲【パーサー関数ここまで】▲▲▲
 
 # --- DB操作ヘルパー関数 ---
 def get_current_provider(db):
@@ -232,6 +411,10 @@ def manage():
                     print(f"Invalid credit amount: {new_credit_str}")
 
             # ▼▼▼【新規】JSON Linesファイルの一括インポート処理 ▼▼▼
+            # ▼▼▼【ここからロジックを置き換え】▼▼▼
+            # (旧: import_jsonl / 新: import_raw_text)
+            # HTML側の value="import_jsonl" はそのまま利用し、
+            # バックエンドの処理を生テキストパーサーに差し替える
             elif action == 'import_jsonl':
                 if 'jsonl_file' not in request.files:
                     flash('ファイルがリクエストに含まれていません。', 'error')
@@ -245,42 +428,50 @@ def manage():
 
                 if file and file.filename.endswith('.txt'):
                     try:
-                        # ファイルをテキストとして読み込む
+                        # 1. (変更) 生テキストファイルを行リストとして読み込む
                         stream = io.StringIO(file.stream.read().decode("UTF-8"), newline=None)
-                        lines = stream.readlines()
+                        lines = [line.strip() for line in stream.readlines()]
                         
-                        added_count = 0
-                        skipped_count = 0
-                        error_count = 0
+                        if not lines:
+                             flash('ファイルが空です。', 'error')
+                             return redirect(url_for('manage'))
 
-                        for line in lines:
-                            if not line.strip(): # 空行はスキップ
-                                continue
-                            
+                        # 2. (変更) DBから既存のpost_idセットを取得
+                        existing_ids_tuples = db.query(CollectedPost.post_id).all()
+                        existing_ids_set = {pid[0] for pid in existing_ids_tuples}
+                        initial_id_count = len(existing_ids_set)
+                        print(f"DBに {initial_id_count} 件の既存IDを検出。")
+
+                        # 3. (変更) 移植したパーサー関数を実行
+                        #    (existing_ids_set は参照渡しされ、パーサー内で更新される)
+                        parsed_posts_data, new_count = parse_threads_data_from_lines(lines, existing_ids_set)
+                        
+                        added_to_db_count = 0
+                        skipped_in_db_count = 0
+
+                        if not parsed_posts_data:
+                            flash('解析できる新規投稿が見つかりませんでした。ファイル内容を確認してください。', 'warning')
+                            return redirect(url_for('manage'))
+
+                        # 4. (変更) パーサーが返した辞書リストをDBに挿入
+                        for post_data in parsed_posts_data:
                             try:
-                                post_data = json.loads(line)
-                                
-                                # 必須フィールドのチェック
-                                post_id = post_data.get('post_id')
-                                original_text = post_data.get('original_text')
-                                username = post_data.get('username')
-                                posted_at_str = post_data.get('posted_at')
-                                
-                                if not post_id or not username or not posted_at_str:
-                                     print(f"Skipping line (missing data): {line}")
-                                     error_count += 1
-                                     continue
+                                # 念のため、パーサーが生成したIDがDBにないか最終チェック
+                                # (parse_threads_data_from_lines内で既にチェック＆セット追加済みだが二重確認)
+                                if post_data['post_id'] in existing_ids_set:
+                                    # (このルートは通常通らないはず)
+                                    print(f"DBスキップ: {post_data['post_id']} は既にDBに存在。")
+                                    skipped_in_db_count += 1
+                                    continue
 
                                 # 投稿日時 (posted_at) をISO文字列からdatetimeオブジェクトに変換
-                                # (parse関数はタイムゾーン情報も正しく処理できる)
-                                posted_at_dt = parse(posted_at_str)
+                                posted_at_dt = parse(post_data['posted_at'])
 
-                                # DBに新しい投稿として作成
                                 new_post = CollectedPost(
-                                    username=username,
-                                    post_id=post_id, # 仮ID (重複チェックに使用)
-                                    original_text=original_text,
-                                    source_url=post_data.get('source_url', ''), # URLは空の場合もある
+                                    username=post_data['username'],
+                                    post_id=post_data['post_id'],
+                                    original_text=post_data['original_text'],
+                                    source_url=post_data.get('source_url', ''), 
                                     posted_at=posted_at_dt,
                                     like_count=int(post_data.get('like_count', 0)),
                                     retweet_count=int(post_data.get('retweet_count', 0)),
@@ -289,25 +480,26 @@ def manage():
                                 
                                 db.add(new_post)
                                 db.flush() # flushしてDBに送信 (commit前)
-                                added_count += 1
+                                added_to_db_count += 1
+                                # (パーサーがセットに追加済みなので、ここでは不要)
+                                # existing_ids_set.add(post_data['post_id'])
 
                             except IntegrityError: # post_id の unique 制約違反
-                                db.rollback() # エラーをロールバック
-                                print(f"Skipping duplicate post_id: {post_data.get('post_id')}")
-                                skipped_count += 1
-                            except json.JSONDecodeError:
-                                db.rollback()
-                                print(f"Skipping invalid JSON line: {line}")
-                                error_count += 1
+                                db.rollback() 
+                                print(f"DBスキップ (IntegrityError): {post_data.get('post_id')}")
+                                skipped_in_db_count += 1
                             except Exception as e:
                                 db.rollback()
-                                print(f"An unexpected error occurred processing line: {line}\nError: {e}")
-                                error_count += 1
+                                print(f"DB挿入エラー: {e} (データ: {post_data})")
+                                skipped_in_db_count += 1
 
-                        # すべての処理が終わったらコミット
+                        # 5. すべての処理が終わったらコミット
                         db.commit() 
                         
-                        flash(f'インポート完了: {added_count} 件の新規投稿を追加, {skipped_count} 件の重複をスキップ, {error_count} 件のエラー。', 'success')
+                        # パーサーが検出した新規件数(new_count)と、
+                        # 実際にDBに追加成功した件数(added_to_db_count)
+                        total_skipped = (new_count - added_to_db_count) + skipped_in_db_count
+                        flash(f'インポート完了: {added_to_db_count} 件の新規投稿を追加, {total_skipped} 件をスキップしました。', 'success')
 
                     except Exception as e:
                         db.rollback()
@@ -315,6 +507,7 @@ def manage():
                         flash(f'ファイル処理エラー: {e}', 'error')
                 else:
                     flash('無効なファイル形式です。.txt ファイルをアップロードしてください。', 'error')
+            # ▲▲▲【ロジック置き換えここまで】▲▲▲
 
             return redirect(url_for('manage')) # 処理後にリダイレクト
 
