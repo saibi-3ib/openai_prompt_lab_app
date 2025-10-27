@@ -1,34 +1,55 @@
 # utils_parser.py
 
 import re
+import os
+import sys
+import argparse
 import hashlib
 import logging
+from logging.handlers import RotatingFileHandler
 from datetime import datetime, timedelta, timezone
 from typing import List, Set, Tuple, Dict
 
 
-# --------------------------
-# Logging configuration
-# --------------------------
+# ============================================================
+# Logging Configuration
+# ============================================================
+
+LOG_DIR = "logs"
+LOG_FILE = os.path.join(LOG_DIR, "parser.log")
+os.makedirs(LOG_DIR, exist_ok=True)
+
 logger = logging.getLogger(__name__)
+
 if not logger.handlers:
-    # Default logging setup (only used if the app hasn't configured logging)
-    handler = logging.StreamHandler()
-    formatter = logging.Formatter("[%(levelname)s] %(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    # Console handler
+    console_handler = logging.StreamHandler()
+    console_formatter = logging.Formatter("[%(levelname)s] %(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
+    console_handler.setFormatter(console_formatter)
+
+    # File handler with rotation
+    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
+    file_formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s",
+        "%Y-%m-%d %H:%M:%S"
+    )
+    file_handler.setFormatter(file_formatter)
+
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
     logger.setLevel(logging.INFO)
 
 
-# --------------------------
+# ============================================================
 # Constants
-# --------------------------
+# ============================================================
+
 JST = timezone(timedelta(hours=9))  # Japan Standard Time (UTC+9)
 
 
-# --------------------------
-# Main Function
-# --------------------------
+# ============================================================
+# Main Parsing Function
+# ============================================================
 
 def parse_threads_data_from_lines(
     lines: List[str],
@@ -126,9 +147,9 @@ def parse_threads_data_from_lines(
     return parsed_posts_data, newly_added_count
 
 
-# --------------------------
+# ============================================================
 # Helper Functions
-# --------------------------
+# ============================================================
 
 def detect_username(lines: List[str]) -> str:
     """Detects the Threads username (e.g., 'npr' or 'stockstoearn')."""
@@ -210,3 +231,39 @@ def generate_pseudo_id(username: str, timestamp: str, text_snippet: str) -> str:
     """Generates a deterministic short hash ID for a post."""
     base = f"{username}|{timestamp}|{text_snippet}".encode("utf-8")
     return hashlib.md5(base).hexdigest()[:10]
+
+
+# ============================================================
+# CLI Entry Point for Testing
+# ============================================================
+
+def _run_cli():
+    parser = argparse.ArgumentParser(
+        description="Parse raw Threads profile text files into structured post data."
+    )
+    parser.add_argument("file", help="Path to the text file exported from Threads")
+    parser.add_argument("--verbose", action="store_true", help="Enable detailed debug logging for this run")
+
+    args = parser.parse_args()
+
+    if not os.path.exists(args.file):
+        print(f"❌ File not found: {args.file}")
+        sys.exit(1)
+
+    with open(args.file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    processed = set()
+    posts, count = parse_threads_data_from_lines(lines, processed, verbose=args.verbose)
+
+    print(f"\n✅ Parsed {count} new posts from '{args.file}'")
+    print(f"🧩 Detected username: {posts[0]['username'] if posts else '(none)'}")
+    print(f"🪵 Logs saved to: {LOG_FILE}")
+    print(f"💾 Output sample (first 1–2 posts):\n")
+    for p in posts[:2]:
+        print(f"- [{p['posted_at']}] {p['original_text'][:100]}...")
+    print()
+
+
+if __name__ == "__main__":
+    _run_cli()
