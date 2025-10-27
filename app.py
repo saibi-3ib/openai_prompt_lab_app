@@ -587,3 +587,161 @@ def filter_posts():
         return jsonify({"status": "error", "message": error_msg}), 500
     finally:
         db.close()
+
+# ▼▼▼【ここから追加】▼▼▼
+# --- APIルート: 保存済みプロンプト一覧の取得 ---
+@app.route('/api/get-prompts', methods=['GET'])
+def get_prompts():
+    db = SessionLocal()
+    try:
+        # DBから全てのプロンプトを取得
+        prompts = db.query(Prompt).order_by(Prompt.name).all()
+        
+        # JSONシリアライズ可能な辞書のリストに変換
+        results_list = []
+        for p in prompts:
+            results_list.append({
+                "id": p.id,
+                "name": p.name,
+                "template_text": p.template_text,
+                "is_default": p.is_default
+            })
+        
+        # デフォルトプロンプトが1件もなければ、ここで作成する
+        if not results_list:
+            default_prompt = get_current_prompt(db) # 既存のヘルパー関数を利用
+            results_list.append({
+                "id": default_prompt.id,
+                "name": default_prompt.name,
+                "template_text": default_prompt.template_text,
+                "is_default": default_prompt.is_default
+            })
+
+        return jsonify(results_list)
+
+    except Exception as e:
+        error_msg = f"プロンプトの読み込み中にエラーが発生しました: {str(e)}"
+        print(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
+    finally:
+        db.close()
+# ▲▲▲【ここまで追加】▲▲▲
+
+# ▼▼▼【ここから追加】▼▼▼
+# --- APIルート: プロンプトの保存/更新 ---
+@app.route('/api/save-prompt', methods=['POST'])
+def save_prompt():
+    db = SessionLocal()
+    try:
+        data = request.get_json()
+        prompt_id = data.get('promptId')
+        prompt_text = data.get('templateText')
+        prompt_name = data.get('promptName') # 将来的な「名前を付けて保存」用 (今回は未使用)
+
+        if not prompt_text:
+            return jsonify({"status": "error", "message": "プロンプト本文が空です。"}), 400
+
+        # prompt_id が存在すれば「更新」、なければ「新規作成」
+        if prompt_id:
+            # --- 更新 ---
+            prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+            if not prompt:
+                return jsonify({"status": "error", "message": "対象のプロンプトが見つかりません。"}), 404
+            
+            prompt.template_text = prompt_text
+            # (もし名前も更新する場合はここで)
+            # if prompt_name:
+            #     prompt.name = prompt_name
+            
+            db.commit()
+            db.refresh(prompt) # 更新後のデータを取得
+            
+            return jsonify({
+                "status": "success", 
+                "message": f"プロンプト '{prompt.name}' を更新しました。",
+                "updated_prompt": {
+                    "id": prompt.id,
+                    "name": prompt.name,
+                    "template_text": prompt.template_text,
+                    "is_default": prompt.is_default
+                }
+            })
+        
+        # ▼▼▼【ここから修正 (新規作成ロジック)】▼▼▼
+        else:
+            # --- 新規作成 ---
+            if not prompt_name:
+                return jsonify({"status": "error", "message": "新しいプロンプトの名前を入力してください。"}), 400
+            
+            # (任意) 同名プロンプトの重複チェック
+            existing = db.query(Prompt).filter(Prompt.name == prompt_name).first()
+            if existing:
+                return jsonify({"status": "error", "message": f"名前 '{prompt_name}' は既に使用されています。"}), 409 # 409 Conflict
+
+            new_prompt = Prompt(
+                name = prompt_name,
+                template_text = prompt_text,
+                is_default = False # 新規作成はデフォルトにはしない
+            )
+            db.add(new_prompt)
+            db.commit()
+            db.refresh(new_prompt) # DBが割り当てたIDを取得
+            
+            return jsonify({
+                "status": "success",
+                "message": f"プロンプト '{new_prompt.name}' を新規保存しました。",
+                "action": "create", # (JS側で判別するため)
+                "new_prompt": {
+                    "id": new_prompt.id,
+                    "name": new_prompt.name,
+                    "template_text": new_prompt.template_text,
+                    "is_default": new_prompt.is_default
+                }
+            })
+        # ▲▲▲【ここまで修正】▲▲▲
+
+    except Exception as e:
+        db.rollback()
+        error_msg = f"プロンプト保存中にエラーが発生しました: {str(e)}"
+        print(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
+    finally:
+        db.close()
+
+# --- APIルート: プロンプトの削除 ---
+@app.route('/api/delete-prompt', methods=['POST'])
+def delete_prompt():
+    db = SessionLocal()
+    try:
+        data = request.get_json()
+        prompt_id = data.get('promptId')
+
+        if not prompt_id:
+            return jsonify({"status": "error", "message": "プロンプトIDが指定されていません。"}), 400
+
+        prompt = db.query(Prompt).filter(Prompt.id == prompt_id).first()
+
+        if not prompt:
+            return jsonify({"status": "error", "message": "削除対象のプロンプトが見つかりません。"}), 404
+        
+        # デフォルトプロンプトは削除させない
+        if prompt.is_default or prompt.name == DEFAULT_PROMPT_KEY:
+            return jsonify({"status": "error", "message": "デフォルトプロンプト (default_summary) は削除できません。"}), 403
+
+        deleted_name = prompt.name
+        db.delete(prompt)
+        db.commit()
+        
+        return jsonify({
+            "status": "success", 
+            "message": f"プロンプト '{deleted_name}' を削除しました。"
+        })
+
+    except Exception as e:
+        db.rollback()
+        error_msg = f"プロンプト削除中にエラーが発生しました: {str(e)}"
+        print(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
+    finally:
+        db.close()
+# ▲▲▲【ここまで追加】▲▲▲

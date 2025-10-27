@@ -318,7 +318,8 @@
                             </div>
                         <textarea id="prompt-editor" rows="10" class="w-full p-3 text-sm flex-1 rounded"></textarea>
                         <div class="mt-2 flex space-x-2">
-                            <button id="save-prompt-btn" class="bg-gray-600 hover:bg-gray-700 text-xs font-bold py-1 px-3 rounded transition duration-200">保存</button>
+                            <button id="save-prompt-btn" class="bg-gray-600 hover:bg-gray-700 text-xs font-bold py-1 px-3 rounded transition duration-200">上書き保存</button>
+                            <button id="save-as-new-prompt-btn" class="bg-blue-600 hover:bg-blue-700 text-xs font-bold py-1 px-3 rounded transition duration-200">名前を付けて新規保存</button>
                             <button id="delete-prompt-btn" class="bg-red-700 hover:bg-red-800 text-white text-xs font-bold py-1 px-3 rounded transition duration-200">削除</button>
                         </div>
                     </div>
@@ -351,6 +352,18 @@
         const filterRtsInput = document.getElementById('filter-rts');
         const filterRunBtn = document.getElementById('filter-run-btn');
         const filterResetBtn = document.getElementById('filter-reset-btn');
+
+        // ▼▼▼【ここから追加】▼▼▼
+        // プロンプトUI要素
+        const promptSelect = document.getElementById('prompt-select');
+        const promptEditor = document.getElementById('prompt-editor');
+        const savePromptBtn = document.getElementById('save-prompt-btn');
+        const saveAsNewPromptBtn = document.getElementById('save-as-new-prompt-btn'); // <-- 【追加】
+        const deletePromptBtn = document.getElementById('delete-prompt-btn');
+
+        // プロンプトデータを一時保存するストア
+        let promptStore = [];
+        // ▲▲▲【ここまで追加】▲▲▲
 
         // 選択状態管理
         const selectedPostIds = new Set();
@@ -710,6 +723,244 @@
                       .replace(/>/g, '&gt;')
                       .replace(/\n/g, '&#10;'); // 改行もエンティティ化
         }
+
+        // ▼▼▼【ここから追加】▼▼▼
+        // --- 9. プロンプト管理機能 ---
+        
+        // (A) DBからプロンプト一覧をロードし、ドロップダウンを生成
+        async function loadPromptsIntoDropdown() {
+            try {
+                const response = await fetch('/api/get-prompts');
+                if (!response.ok) throw new Error('APIからプロンプトを取得できませんでした。');
+                
+                const prompts = await response.json();
+                
+                // データをグローバルストアに保存
+                promptStore = prompts;
+                
+                promptSelect.innerHTML = ''; // ドロップダウンをクリア
+                
+                let defaultPromptText = '';
+
+                prompts.forEach(prompt => {
+                    const option = document.createElement('option');
+                    option.value = prompt.id;
+                    option.textContent = prompt.name;
+                    promptSelect.appendChild(option);
+                    
+                    // デフォルトプロンプトのテキストを保持
+                    if (prompt.is_default || prompts.length === 1) {
+                        defaultPromptText = prompt.template_text;
+                        option.selected = true; // デフォルトを選択状態にする
+                    }
+                });
+                
+                // デフォルトプロンプトをエディタに表示
+                promptEditor.value = defaultPromptText;
+
+            } catch (error) {
+                console.error("プロンプトのロードに失敗:", error);
+                promptEditor.value = "エラー: プロンプトのロードに失敗しました。";
+            }
+        }
+
+        // ▼▼▼【ここから追加】▼▼▼
+        // (B) 「保存」ボタンの処理
+        savePromptBtn.addEventListener('click', async () => {
+            const selectedId = parseInt(promptSelect.value, 10);
+            const editorText = promptEditor.value;
+
+            if (!selectedId) {
+                alert("プロンプトが選択されていません。");
+                return;
+            }
+            if (!editorText.trim()) {
+                alert("プロンプト本文が空です。");
+                return;
+            }
+
+            // (簡易的なローディング表示)
+            const originalBtnText = savePromptBtn.textContent;
+            savePromptBtn.textContent = "保存中...";
+            savePromptBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/save-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        promptId: selectedId,
+                        templateText: editorText
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    // 保存成功
+                    alert(result.message);
+                    // ストア内のデータを更新 (重要)
+                    const index = promptStore.findIndex(p => p.id === selectedId);
+                    if (index !== -1) {
+                        promptStore[index].template_text = editorText;
+                    }
+                } else {
+                    // 保存失敗
+                    throw new Error(result.message || '不明なエラー');
+                }
+
+            } catch (error) {
+                console.error("プロンプト保存エラー:", error);
+                alert(`保存に失敗しました:\n${error.message}`);
+            } finally {
+                // ボタンを元に戻す
+                savePromptBtn.textContent = originalBtnText;
+                savePromptBtn.disabled = false;
+            }
+        });
+
+        // (C) 「削除」ボタンの処理
+        deletePromptBtn.addEventListener('click', async () => {
+            const selectedId = parseInt(promptSelect.value, 10);
+            const selectedName = promptSelect.options[promptSelect.selectedIndex].text;
+
+            if (!selectedId) {
+                alert("プロンプトが選択されていません。");
+                return;
+            }
+
+            if (!window.confirm(`本当にプロンプト「${selectedName}」を削除しますか？`)) {
+                return; // ユーザーがキャンセル
+            }
+            
+            deletePromptBtn.textContent = "削除中...";
+            deletePromptBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/delete-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ promptId: selectedId })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success') {
+                    // 削除成功
+                    alert(result.message);
+                    // ドロップダウンをリロードして削除を反映
+                    await loadPromptsIntoDropdown();
+                } else {
+                    // 削除失敗 (例: デフォルトプロンプト)
+                    throw new Error(result.message || '不明なエラー');
+                }
+
+            } catch (error) {
+                console.error("プロンプト削除エラー:", error);
+                alert(`削除に失敗しました:\n${error.message}`);
+            } finally {
+                deletePromptBtn.textContent = "削除";
+                deletePromptBtn.disabled = false;
+            }
+        });
+        // ▲▲▲【ここまで追加】▲▲▲
+        
+        // ▼▼▼【ここから追加】▼▼▼
+        // (D) 「名前を付けて新規保存」ボタンの処理
+        saveAsNewPromptBtn.addEventListener('click', async () => {
+            const editorText = promptEditor.value;
+
+            if (!editorText.trim()) {
+                alert("プロンプト本文が空です。");
+                return;
+            }
+
+            // 新しいプロンプトの名前をユーザーに入力させる
+            const newName = window.prompt("新しいプロンプトの名前を入力してください:", "");
+            if (!newName || !newName.trim()) {
+                alert("名前がキャンセルされたか、空です。");
+                return;
+            }
+
+            const originalBtnText = saveAsNewPromptBtn.textContent;
+            saveAsNewPromptBtn.textContent = "保存中...";
+            saveAsNewPromptBtn.disabled = true;
+
+            try {
+                const response = await fetch('/api/save-prompt', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        promptId: null, // IDをnullにして「新規」を通知
+                        templateText: editorText,
+                        promptName: newName.trim() // 新しい名前を渡す
+                    })
+                });
+
+                const result = await response.json();
+
+                if (response.ok && result.status === 'success' && result.action === 'create') {
+                    // 新規保存成功
+                    alert(result.message);
+                    
+                    // (重要) ストアとドロップダウンを更新
+                    const newPrompt = result.new_prompt;
+                    promptStore.push(newPrompt); // ストアに追加
+                    
+                    // ドロップダウンにも <option> を追加
+                    const option = document.createElement('option');
+                    option.value = newPrompt.id;
+                    option.textContent = newPrompt.name;
+                    promptSelect.appendChild(option);
+                    
+                    // 新しく作成したプロンプトを選択状態にする
+                    option.selected = true;
+
+                    // ▼▼▼【ここを追加】▼▼▼
+                    // エディタの内容も即座に更新する
+                    promptEditor.value = newPrompt.template_text;
+                    // ▲▲▲【ここまで追加】▲▲▲
+                    
+                } else {
+                    // 保存失敗 (重複名など)
+                    throw new Error(result.message || '不明なエラー');
+                }
+
+            } catch (error) {
+                console.error("プロンプト新規保存エラー:", error);
+                alert(`新規保存に失敗しました:\n${error.message}`);
+            } finally {
+                saveAsNewPromptBtn.textContent = originalBtnText;
+                saveAsNewPromptBtn.disabled = false;
+            }
+        });
+        // ▲▲▲【ここまで追加】▲▲▲
+        
+        // ▼▼▼【ここから追加】▼▼▼
+        // (E) ドロップダウン変更時にエディタの内容を更新
+        promptSelect.addEventListener('change', (e) => {
+            // 1. 選択された <option> の value (プロンプトID) を数値で取得
+            const selectedId = parseInt(e.target.value, 10);
+            
+            // 2. JS内の「promptStore」配列から、そのIDを持つプロンプトオブジェクトを検索
+            const selectedPrompt = promptStore.find(p => p.id === selectedId);
+            
+            // 3. 見つかったら、そのテキストをエディタに設定
+            if (selectedPrompt) {
+                promptEditor.value = selectedPrompt.template_text;
+            }
+        });
+        // ▲▲▲【ここまで追加】▲▲▲
+
+        // --- 10. 初期化処理の呼び出し ---
+        
+        // (変更) 既存の processPostTextDOM(); をこっちに移動
+        processPostTextDOM(); 
+        
+        // (追加) プロンプトドロップダウンを初期化
+        loadPromptsIntoDropdown();
+        
+        // ▲▲▲【ここまで追加】▲▲▲
 
     });
 </script>
