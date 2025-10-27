@@ -195,6 +195,7 @@
                     <span class="text-xs text-gray-400">USD</span>
                 </div>
                 <span class="text-sm text-gray-400">Worker: <span class="font-bold text-yellow-400">{{ current_provider }}</span></span>
+                <a href="/history" class="text-blue-400 hover:text-blue-300 transition duration-200">📜 分析履歴</a>
                 <a href="/manage" class="text-blue-400 hover:text-blue-300 transition duration-200">⚙️ 設定管理へ</a>
             </div>
         </nav>
@@ -666,9 +667,46 @@
                         if (creditMonitor && result.new_balance_usd !== undefined) {
                             creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6);
                         }
-                        const prettyJson = JSON.stringify(JSON.parse(result.raw_json), null, 2);
+
+                        // ▼▼▼【ここから修正】▼▼▼
+
+                        // 1. 生JSONをパースして、中身をローカルで確認する
+                        const rawOutput = JSON.parse(result.raw_json);
+                        
+                        // 2. 表示用のサマリー (app.pyが賢く抽出してくれたもの)
+                        const displaySummary = result.summary;
+                        
+                        // 3. (新機能) 詳細分析の件数をカウント
+                        let detailCount = 0;
+                        if (rawOutput.detailed_analysis && Array.isArray(rawOutput.detailed_analysis)) {
+                            detailCount = rawOutput.detailed_analysis.length;
+                        }
+
+                        // 4. 生JSONを整形
+                        const prettyJson = JSON.stringify(rawOutput, null, 2);
+                        
+                        // 5. コスト情報
                         const costInfo = result.cost_usd ? `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})` : 'コスト情報なし';
-                        resultDisplay.innerHTML = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p><p class="mt-2 text-sm">コスト: ${costInfo}</p><p class="mt-3 font-semibold text-gray-300">概要:</p><p class="text-sm italic">${result.summary}</p><p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p><pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre><p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`;
+                        
+                        // 6. 結果HTMLを構築
+                        let resultHtml = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p>
+                                          <p class="mt-2 text-sm">コスト: ${costInfo}</p>
+                                          <p class="mt-3 font-semibold text-gray-300">概要 (Summary):</p>
+                                          <p class="text-sm italic">${escapeHtml(displaySummary)}</p>`; // メインサマリー
+
+                        // (新機能) 詳細分析の件数を表示
+                        if (detailCount > 0) {
+                            resultHtml += `<p class="mt-2 text-xs text-gray-400">(${detailCount}件の詳細分析を含む)</p>`;
+                        }
+
+                        resultHtml += `<p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p>
+                                       <pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre>
+                                       <p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`;
+                        
+                        resultDisplay.innerHTML = resultHtml;
+                        
+                        // ▲▲▲【ここまで修正】▲▲▲
+
                     } else { 
                         const errorMessage = result.message || '不明なエラー';
                         throw new Error(`APIエラー: ${errorMessage}`);
@@ -935,7 +973,7 @@
             }
         });
         // ▲▲▲【ここまで追加】▲▲▲
-        
+
         // ▼▼▼【ここから追加】▼▼▼
         // (E) ドロップダウン変更時にエディタの内容を更新
         promptSelect.addEventListener('change', (e) => {

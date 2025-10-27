@@ -1,12 +1,11 @@
 import os
 import json
 import requests 
-# ▼▼▼ 以下を追加 ▼▼▼
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, get_flashed_messages
 from sqlalchemy.exc import IntegrityError # 重複エラー検出のため
+from sqlalchemy.orm import joinedload
 from dateutil.parser import parse # ISO形式の日時文字列をパースするため
 import io # アップロードされたファイルをテキストとして読み込むため
-# ▲▲▲ 追加ここまで ▲▲▲
 
 from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
 from datetime import datetime, timezone
@@ -465,6 +464,13 @@ def analyze_batch():
         # summary のパースは引き続き行い、extracted_summary に格納する
         summary = ai_result_json.get("summary", "Summary not available.")
 
+        # ▼▼▼【ここから修正】▼▼▼
+        # 複数のキーを試行してサマリーを抽出
+        summary = ai_result_json.get("analysis_summary", None) # (1) Sentiment_v1 形式
+        if summary is None:
+            summary = ai_result_json.get("summary", "Summary not available.") # (2) default_summary 形式
+        # ▲▲▲【ここまで修正】▲▲▲
+
         # コスト計算
         total_cost = calculate_cost(selected_model, usage_data)
         # クレジット残高を更新
@@ -742,6 +748,35 @@ def delete_prompt():
         error_msg = f"プロンプト削除中にエラーが発生しました: {str(e)}"
         print(error_msg)
         return jsonify({"status": "error", "message": error_msg}), 500
+    finally:
+        db.close()
+# ▲▲▲【ここまで追加】▲▲▲
+
+# ▼▼▼【ここから追加】▼▼▼
+# --- ページ: 分析履歴一覧 ---
+@app.route('/history')
+def history():
+    db = SessionLocal()
+    try:
+        # AnalysisResult を取得
+        # .options(joinedload(...)) を使い、N+1問題を回避する
+        # (N+1問題: ループ内で都度DBに問合せる非効率な処理)
+        #
+        # 1. prompt (Promptテーブル) と 
+        # 2. posts (CollectedPostテーブル) を
+        #    最初のクエリで一緒にJOINして読み込む (Eager Loading)
+        results = db.query(AnalysisResult).options(
+            joinedload(AnalysisResult.prompt),
+            joinedload(AnalysisResult.posts)
+        ).order_by(AnalysisResult.analyzed_at.desc()).all()
+        
+        # (次のステップで作成する) history.html に結果を渡す
+        return render_template("history.html", results=results)
+
+    except Exception as e:
+        print(f"履歴ページの読み込みエラー: {e}")
+        flash(f"履歴の読み込みに失敗しました: {e}", "error")
+        return redirect(url_for('index')) # エラー時はダッシュボードに戻る
     finally:
         db.close()
 # ▲▲▲【ここまで追加】▲▲▲

@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>分析履歴</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* (manage.html と同じダークテーマのスタイル) */
+        body { background-color: #111827; color: #E5E7EB; }
+        header { background-color: #1F2937; }
+        .card { 
+            background-color: #1F2937; 
+            border: 1px solid #374151; 
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+        pre {
+            background-color: #0d1117; /* さらに暗い背景 (生JSON用) */
+            border: 1px solid #374151;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            overflow-x: auto; /* 横スクロール */
+            white-space: pre-wrap; /* JSON内で改行 */
+            word-break: break-all;
+            max-height: 400px; /* 高すぎないように制限 */
+        }
+        .tag {
+            display: inline-block;
+            background-color: #374151;
+            color: #D1D5DB;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+        
+        /* ▼▼▼【ここから修正・追加】▼▼▼ */
+        
+        /* プロンプト本文用の <pre> スタイル */
+        .prompt-pre {
+            background-color: #1a2233; /* JSON(0d1117)より少し明るい青系 */
+            border: 1px solid #374151;
+            padding: 0.75rem;
+            border-radius: 0.375rem;
+            overflow-x: auto;
+            white-space: pre-wrap; /* 改行を保持 */
+            word-break: break-word;
+            max-height: 300px;
+        }
+        
+        /* 折りたたみ用トグルボタン */
+        .toggle-btn {
+            cursor: pointer;
+            font-size: 0.875rem; /* 14px */
+            font-weight: 600;
+            color: #9CA3AF; /* gray-400 */
+            display: inline-flex;
+            align-items: center;
+        }
+        .toggle-btn:hover {
+            color: #E5E7EB; /* white */
+        }
+        .toggle-btn .icon {
+            margin-right: 0.5rem;
+            transition: transform 0.2s ease-in-out;
+            transform: rotate(-90deg); /* デフォルトで折りたたみ状態 (►) */
+        }
+        .toggle-btn .toggle-text {
+            color: #60A5FA; /* blue-400 */
+        }
+        
+        /* コンテンツエリア */
+        .collapsible-content {
+            display: none; /* デフォルトで非表示 */
+            margin-top: 0.75rem;
+        }
+
+        /* 展開された状態のスタイル */
+        .collapsible-container:not(.collapsed) .collapsible-content {
+            display: block; /* 表示する */
+        }
+        .collapsible-container:not(.collapsed) .toggle-btn .icon {
+            transform: rotate(0deg); /* アイコンを回転 (▼) */
+        }
+        
+        /* (単一列) 投稿リストのスタイル */
+        .post-list-item {
+            background-color: #2a3447; /* card(1F2937)より少し明るい */
+            border-bottom: 1px solid #374151;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+        }
+        .post-list-item:first-child {
+            border-top-left-radius: 0.375rem;
+            border-top-right-radius: 0.375rem;
+        }
+        .post-list-item:last-child {
+            border-bottom: none;
+            border-bottom-left-radius: 0.375rem;
+            border-bottom-right-radius: 0.375rem;
+        }
+        .post-list-item .post-username {
+            font-weight: 600;
+            color: var(--color-accent, #DBF227); /* index.html のライム色 (予備) */
+        }
+        .post-list-item .post-body {
+            color: #D1D5DB; /* gray-300 */
+            white-space: pre-wrap; /* 本文の改行を保持 */
+            word-break: break-word;
+            margin-top: 0.25rem;
+        }
+        /* ▲▲▲【ここまで修正・追加】▲▲▲ */
+    </style>
+</head>
+<body class="font-sans">
+
+    <header class="shadow-md">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <h1 class="text-2xl font-bold text-white">分析履歴 (Analysis History)</h1>
+            <a href="/" class="text-blue-400 hover:text-blue-300">← ダッシュボードに戻る</a>
+        </nav>
+    </header>
+
+    <main class="container mx-auto px-6 py-8">
+
+        {% if not results %}
+            <div class="card text-center">
+                <p class="text-gray-400">分析履歴はまだありません。</p>
+            </div>
+        {% endif %}
+
+        {% for result in results %}
+        <div class="card">
+            <div class="flex justify-between items-center mb-4 border-b border-gray-700 pb-3">
+                <div>
+                    <span class="text-lg font-bold text-blue-400">Result ID: {{ result.id }}</span>
+                    <span class="text-sm text-gray-400 ml-4">
+                        {{ result.analyzed_at.strftime('%Y-%m-%d %H:%M:%S') if result.analyzed_at else 'N/A' }} UTC
+                    </span>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 mb-4 text-sm">
+                <div>
+                    <div class="text-gray-500 font-semibold">使用モデル</div>
+                    <div class="text-lg font-mono">{{ result.ai_model or 'N/A' }}</div>
+                </div>
+                <div>
+                    <div class="text-gray-500 font-semibold">消費コスト (USD)</div>
+                    <div class="text-lg font-mono text-yellow-400">${{ '%.6f' | format(result.cost_usd or 0) }}</div>
+                </div>
+                <div>
+                    <div class="text-gray-500 font-semibold">使用プロンプト</div>
+                    <div class="text-lg font-semibold">{{ result.prompt.name if result.prompt else 'N/A (ID: ' ~ result.prompt_id ~ ')' }}</div>
+                </div>
+            </div>
+
+            <div class="mb-4 collapsible-container collapsed"> 
+                <div class="toggle-btn"> 
+                    <span class="icon">►</span>
+                    <h4 class="text-md font-semibold text-gray-400">
+                        分析対象の投稿 ({{ result.posts|length }}件) - <span class="toggle-text">詳細を表示</span>
+                    </h4>
+                </div>
+                
+                <div class="collapsible-content border border-gray-700 rounded-md overflow-hidden"> 
+                    {% for post in result.posts %}
+                        <div class="post-list-item">
+                            <span class="post-username">{{ post.username }}</span>
+                            <p class="post-body">{{ post.original_text }}</p>
+                        </div>
+                    {% else %}
+                        <div class="post-list-item">
+                            <span class="text-gray-500 italic text-sm">関連する投稿がありません。</span>
+                        </div>
+                    {% endfor %}
+                </div>
+            </div>
+
+
+            <div class="mb-4 collapsible-container collapsed"> <div class="toggle-btn"> <span class="icon">►</span>
+                    <h4 class="text-md font-semibold text-gray-400">
+                        使用プロンプト全文 - <span class="toggle-text">詳細を表示</span>
+                    </h4>
+                </div>
+                <div class="collapsible-content"> <pre class="prompt-pre">{{ result.prompt.template_text if result.prompt else '(プロンプト本文なし)' }}</pre>
+                </div>
+            </div>
+            <div class="mb-4">
+                <h4 class="text-md font-semibold mb-2 text-gray-400">抽出サマリー</h4>
+                <p class="text-gray-300 italic p-3 bg-gray-800 rounded-md">
+                    {{ result.extracted_summary or '(サマリーなし)' }}
+                </p>
+            </div>
+            
+
+            <div class="collapsible-container collapsed"> 
+                <div class="toggle-btn"> 
+                    <span class="icon">►</span>
+                    <h4 class="text-md font-semibold text-gray-400">
+                        生JSONレスポンス - <span class="toggle-text">詳細を表示</span>
+                    </h4>
+                </div>
+                <div class="collapsible-content"> 
+                    <pre>{{ result.raw_json_response or 'N/A' }}</pre>
+                </div>
+            </div>
+
+        </div>
+        {% endfor %}
+        </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // (前回のスクリプトをそのままここに配置)
+            const toggleButtons = document.querySelectorAll('.toggle-btn');
+            toggleButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const container = button.closest('.collapsible-container');
+                    if (!container) return;
+                    container.classList.toggle('collapsed');
+                    const textSpan = button.querySelector('.toggle-text');
+                    if (textSpan) {
+                        if (container.classList.contains('collapsed')) {
+                            textSpan.textContent = '詳細を表示';
+                        } else {
+                            textSpan.textContent = '非表示にする';
+                        }
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>
