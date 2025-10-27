@@ -166,6 +166,18 @@
             background-color: var(--color-container-bg); /* ★ ダークグリーンに変更 (元のコンテナ色) */
         }
         /* ▲▲▲ 修正ここまで ▲▲▲ */
+
+        /* === ▼▼▼ 【修正】未選択ポストのホバー色 ▼▼▼ === */
+        .post-item:not(.selected):hover {
+            background-color: var(--color-container-bg); /* ★ ダークグリーンに変更 (元のコンテナ色) */
+        }
+        /* ▲▲▲ 修正ここまで ▲▲▲ */
+        
+        /* ▼▼▼【ここから追加】▼▼▼ */
+        .post-username {
+            color: var(--color-accent); /* (4) アクセント (ライム) */
+        }
+        /* ▲▲▲【ここまで追加】▲▲▲ */
     </style>
 </head>
 
@@ -259,7 +271,7 @@
                     
                     <div class="flex justify-between items-start">
                         <div class="flex items-center space-x-3">
-                            <span class="font-bold text-sm">{{ post.username }}</span> <span class="text-xs text-gray-400">{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }}</span>
+                            <span class="font-bold text-sm post-username">{{ post.username }}</span> <span class="text-xs text-gray-400">{{ post.posted_at.strftime('%Y-%m-%d %H:%M') if post.posted_at else 'N/A' }}</span>
                         </div>
                         <div class="flex space-x-3 text-xs text-gray-400 text-right flex-shrink-0">
                             <span>❤️ {{ post.like_count }}</span>
@@ -392,7 +404,7 @@
                     
                     <div class="flex justify-between items-start">
                         <div class="flex items-center space-x-3">
-                            <span class="font-bold text-sm">${post.username}</span>
+                            <span class="font-bold text-sm post-username">${post.username}</span>
                             <span class="text-xs text-gray-400">${formattedDate}</span>
                         </div>
                         <div class="flex space-x-3 text-xs text-gray-400 text-right flex-shrink-0">
