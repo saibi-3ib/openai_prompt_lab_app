@@ -4,8 +4,19 @@ from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config
 from sqlalchemy import pool
+from sqlalchemy import create_engine # <-- ▼▼▼【これを追加】▼▼▼
 
 from alembic import context
+
+# --- ▼▼▼【以下を追加】▼▼▼ ---
+import os
+from dotenv import load_dotenv
+# models.py の Base をインポート (パスを調整する必要があるかもしれません)
+# Assuming models.py is in the parent directory of 'alembic'
+import sys
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
+from models import Base, DATABASE_URL # DATABASE_URL もインポート
+# --- ▲▲▲【追加ここまで】▲▲▲ ---
 
 # プロジェクトのルートディレクトリをsys.pathに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -26,6 +37,17 @@ print(f"--- [alembic/env.py] Connecting to database at: {DYNAMIC_DATABASE_URL} -
 # access to the values within the .ini file in use.
 config = context.config
 
+# --- ▼▼▼【ここを修正】▼▼▼ ---
+# Read DATABASE_URL directly from the imported models module
+# instead of relying solely on alembic.ini's load_dotenv setting.
+db_url = DATABASE_URL
+if not db_url:
+    raise ValueError("DATABASE_URL could not be imported from models.py. Check models.py and .env setup.")
+# Explicitly set the sqlalchemy.url for Alembic using the imported URL
+config.set_main_option('sqlalchemy.url', db_url)
+print(f"--- [alembic/env.py] Using DATABASE_URL from models: {db_url} ---") # デバッグ用出力追加
+# --- ▲▲▲【修正ここまで】▲▲▲ ---
+
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
@@ -42,19 +64,13 @@ target_metadata = Base.metadata
 
 def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
+    # ... (docstring) ...
     """
-    url = os.environ.get('DATABASE_URL').replace("postgresql://", "postgresql+psycopg://")
+    # url = config.get_main_option("sqlalchemy.url") # <-- 元の行をコメントアウトまたは削除
     context.configure(
-        url=url,
+        # --- ▼▼▼【ここを修正】▼▼▼ ---
+        url=DATABASE_URL, # <-- インポートした DATABASE_URL を直接使う
+        # --- ▲▲▲【修正ここまで】▲▲▲ ---
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -63,25 +79,21 @@ def run_migrations_offline() -> None:
     with context.begin_transaction():
         context.run_migrations()
 
-
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
+    # ... (docstring) ...
     """
-    # 接続情報を環境変数から取得して設定
-    configuration = config.get_section(config.config_ini_section)
+    # --- ▼▼▼【ここの engine 作成部分を修正】▼▼▼ ---
+    # connectable = engine_from_config(
+    #     config.get_section(config.config_ini_section, {}),
+    #     prefix="sqlalchemy.",
+    #     poolclass=pool.NullPool,
+    # ) # <-- 元の engine_from_config をコメントアウトまたは削除
 
-    # 動的に組み立てたデータベースURLを使用
-    configuration["sqlalchemy.url"] = DYNAMIC_DATABASE_URL 
+    # --- 代わりに、インポートした DATABASE_URL を使って直接 engine を作成 ---
+    connectable = create_engine(DATABASE_URL, poolclass=pool.NullPool)
+    # --- ▲▲▲【修正ここまで】▲▲▲ ---
 
-    connectable = engine_from_config(
-        configuration,
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
 
     with connectable.connect() as connection:
         context.configure(
@@ -90,7 +102,6 @@ def run_migrations_online() -> None:
 
         with context.begin_transaction():
             context.run_migrations()
-
 
 if context.is_offline_mode():
     run_migrations_offline()

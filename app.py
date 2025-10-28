@@ -4,12 +4,15 @@ import requests
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, get_flashed_messages
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import joinedload
+from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+
 from dateutil.parser import parse
 import io
 from dotenv import load_dotenv
 
 # --- (変更) モデル定義とDB接続を models から持ってくる ---
-from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
+from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, User
 from datetime import datetime, timezone
 
 # --- ▼▼▼【新規】ロジックのインポート ▼▼▼ ---
@@ -31,9 +34,40 @@ if not app.secret_key:
     raise ValueError("FLASK_SECRET_KEY が .env ファイルに設定されていません。")
 # --- ▲▲▲ リファクタリング ▲▲▲ ---
 
+# --- ▼▼▼【以下を追加】▼▼▼ ---
+# Flask-Login の初期化
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login' # 未ログイン時にリダイレクトされるページの関数名
+login_manager.login_message = "このページにアクセスするにはログインが必要です。" # flash メッセージ
+login_manager.login_message_category = "info" # flash メッセージのカテゴリ (任意)
+# --- ▲▲▲【追加ここまで】▲▲▲ ---
+
+# --- ▼▼▼【以下を追加】▼▼▼ ---
+# ユーザーローダー関数: ユーザーIDを元にユーザーオブジェクトを返す
+@login_manager.user_loader
+def load_user(user_id):
+    db = SessionLocal()
+    try:
+        # user_id は文字列で渡されるので int に変換して検索
+        return db.query(User).get(int(user_id))
+    finally:
+        db.close()
+# --- ▲▲▲【追加ここまで】▲▲▲ ---
+
+# --- ▼▼▼【以下を追加: パスワード関連関数】▼▼▼ ---
+def set_password(password):
+    """ パスワードを受け取り、ハッシュ値を生成して返す """
+    return generate_password_hash(password)
+
+def check_password(hashed_password, password):
+    """ ハッシュ値と入力されたパスワードを比較して T/F を返す """
+    return check_password_hash(hashed_password, password)
+# --- ▲▲▲【パスワード関連関数ここまで】▲▲▲ ---
 
 # --- メインページ (データ表示) ---
 @app.route('/')
+@login_required
 def index():
     db = SessionLocal()
     try:
@@ -58,6 +92,7 @@ def index():
 
 # --- 設定管理ページ (API切り替え、プロンプト編集) ---
 @app.route('/manage', methods=['GET', 'POST'])
+@login_required
 def manage():
     db = SessionLocal()
     try:
@@ -192,6 +227,7 @@ def manage():
 
 # --- オンデマンドAI分析の実行 (単一) ---
 @app.route('/analyze/<int:post_id>', methods=['POST'])
+@login_required
 def analyze_post(post_id):
     # (注: この単一分析ルートは現在 index.html から使われていませんが、残しておきます)
     if not client_openai:
@@ -237,6 +273,7 @@ def analyze_post(post_id):
 
 # --- (スリム化) 一括分析の実行 ---
 @app.route('/api/analyze-batch', methods=['POST'])
+@login_required
 def analyze_batch():
     if not client_openai:
         return jsonify({"status": "error", "message": "OpenAI API Key not configured."}), 400
@@ -261,6 +298,7 @@ def analyze_batch():
 
 # --- APIルート: 投稿の動的絞り込み ---
 @app.route('/api/filter-posts', methods=['POST'])
+@login_required
 def filter_posts():
     db = SessionLocal()
     try:
@@ -319,6 +357,7 @@ def filter_posts():
 
 # --- APIルート: 保存済みプロンプト一覧の取得 ---
 @app.route('/api/get-prompts', methods=['GET'])
+@login_required
 def get_prompts():
     db = SessionLocal()
     try:
@@ -351,6 +390,7 @@ def get_prompts():
 
 # --- APIルート: プロンプトの保存/更新 ---
 @app.route('/api/save-prompt', methods=['POST'])
+@login_required
 def save_prompt():
     db = SessionLocal()
     try:
@@ -423,6 +463,7 @@ def save_prompt():
 
 # --- APIルート: プロンプトの削除 ---
 @app.route('/api/delete-prompt', methods=['POST'])
+@login_required
 def delete_prompt():
     db = SessionLocal()
     try:
@@ -458,6 +499,7 @@ def delete_prompt():
 
 # --- ページ: 分析履歴一覧 ---
 @app.route('/history')
+@login_required
 def history():
     db = SessionLocal()
     try:
@@ -474,6 +516,47 @@ def history():
         return redirect(url_for('index'))
     finally:
         db.close()
+
+# --- ▼▼▼【以下を追加: ログイン/ログアウト ルート】▼▼▼ ---
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    # 既にログイン済みの場合はダッシュボードへリダイレクト
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        remember = request.form.get('remember') # (今回は使わないが、将来の「ログイン状態を保持」用)
+
+        db = SessionLocal()
+        user = db.query(User).filter_by(username=username).first()
+        db.close()
+
+        # ユーザーが存在し、パスワードが正しいかチェック
+        if user and check_password(user.password_hash, password):
+            # Flask-Login の login_user 関数を呼び出す
+            login_user(user, remember=remember) # remember は True/False
+
+            # ログイン後にリダイレクトすべきページがあればそこへ、なければダッシュボードへ
+            next_page = request.args.get('next')
+            if not next_page or not next_page.startswith('/'):
+                next_page = url_for('index')
+            flash('ログインしました。', 'success')
+            return redirect(next_page)
+        else:
+            flash('ユーザー名またはパスワードが無効です。', 'error')
+
+    # GET リクエスト、またはログイン失敗時はログインページを表示
+    return render_template('login.html')
+
+@app.route('/logout')
+@login_required # ログアウトはログインしているユーザーのみ実行可能
+def logout():
+    logout_user() # Flask-Login の logout_user 関数
+    flash('ログアウトしました。', 'info')
+    return redirect(url_for('login')) # ログアウト後はログインページへ
+# --- ▲▲▲【ログイン/ログアウト ルートここまで】▲▲▲ ---
 
 # --- 実行 ---
 if __name__ == "__main__":

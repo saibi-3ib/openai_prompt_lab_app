@@ -11,10 +11,11 @@ client_openai = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else Non
 DEFAULT_PROMPT_KEY = "default_summary"
 
 # 選択可能なOpenAIモデル
-AVAILABLE_MODELS = ["gpt-4o-mini", "gpt-3.5-turbo"]
+AVAILABLE_MODELS = ["gpt-4o-mini", "gpt-3.5-turbo", "gpt-4o"]
 
 # --- OpenAI コスト計算定数と関数 ---
 COST_PER_MILLION = {
+    "gpt-4o": {"input": 5.00, "output": 15.00},          # <-- ▼▼▼【これを追加】▼▼▼
     "gpt-4o-mini": {"input": 0.15, "output": 0.60},
     "gpt-3.5-turbo": {"input": 0.50, "output": 1.50},
 }
@@ -129,10 +130,16 @@ def run_batch_analysis(
 
         # 結果のパース
         ai_result_json = json.loads(ai_result_str)
-        summary = ai_result_json.get("analysis_summary", None)
+        
+        # ▼▼▼【ここを修正】▼▼▼
+        # 複数のキーを試行してサマリーを抽出 (overall_summary を最優先)
+        summary = ai_result_json.get("overall_summary", None) # (1) Comprehensive_v2 形式
         if summary is None:
-            summary = ai_result_json.get("summary", "Summary not available.")
-
+            summary = ai_result_json.get("analysis_summary", None) # (2) Sentiment_v1 形式
+        if summary is None:
+            summary = ai_result_json.get("summary", "Summary not available.") # (3) default_summary 形式
+        # ▲▲▲【修正ここまで】▲▲▲
+        
         # コスト計算と残高更新
         total_cost = calculate_cost(selected_model, usage_data)
         new_balance = update_credit_balance(db, total_cost)

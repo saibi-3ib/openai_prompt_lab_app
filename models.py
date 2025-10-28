@@ -3,21 +3,40 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Table, Float
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
+from flask_login import UserMixin
 
 load_dotenv()
 
-# プロジェクトのルートディレクトリへの絶対パスを取得
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-#.envファイルからデータベースURLを取得、もしくはデフォルトの'app.db'を使用
-DB_NAME = os.environ.get("DB_FILENAME", "app.db")
-# 絶対パスのデータベースURLを構築
-DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, DB_NAME)}"
-print(f"--- [models.py] Connecting to database at: {os.path.join(BASE_DIR, DB_NAME)} ---") # デバッグ用出力
+DB_USER = os.environ.get("DB_USER")
+DB_PASSWORD = os.environ.get("DB_PASSWORD")
+DB_HOST = os.environ.get("DB_HOST", "localhost")
+DB_PORT = os.environ.get("DB_PORT", "5432")
+DB_NAME = os.environ.get("DB_NAME")
+
+# DB接続情報が .env から読み込めているかチェック
+if not all([DB_USER, DB_PASSWORD, DB_NAME]):
+    raise ValueError("データベース接続情報 (DB_USER, DB_PASSWORD, DB_NAME) が .env ファイルに設定されていません。")
+
+DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+print(f"--- [models.py] Connecting to PostgreSQL database at: {DB_HOST}:{DB_PORT}/{DB_NAME} ---")
 
 engine = create_engine(DATABASE_URL)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
+
+# --- ▼▼▼【以下をファイル末尾に追加】▼▼▼ ---
+# --- テーブル: ユーザー情報 ---
+class User(UserMixin, Base): # <-- UserMixin を継承
+    __tablename__ = "users"
+    id = Column(Integer, primary_key=True)
+    username = Column(String(64), index=True, unique=True, nullable=False)
+    password_hash = Column(String(256), nullable=False)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+    def get_id(self):
+        return str(self.id)
+# --- ▲▲▲【追加ここまで】▲▲▲ ---
 
 # --- テーブル: 監視対象アカウント ---
 class TargetAccount(Base):
