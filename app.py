@@ -280,12 +280,18 @@ def analyze_batch():
 
     data = request.get_json()
     
+    # ▼▼▼【修正点】プロンプト名を取得して追加 ▼▼▼
+    selected_prompt_name = data.get('promptName') # UIから送られたプロンプト名
+    if not selected_prompt_name:
+         return jsonify({"status": "error", "message": "プロンプト名が指定されていません。"}), 400
+    
     try:
         # (変更) ビジネスロジックを utils_db の関数に委譲
         result_data = run_batch_analysis(
             post_ids=data.get('postIds', []),
             prompt_text=data.get('promptText'),
-            selected_model=data.get('modelName', AVAILABLE_MODELS[0])
+            selected_model=data.get('modelName', AVAILABLE_MODELS[0]),
+            selected_prompt_name=selected_prompt_name
         )
         return jsonify(result_data)
     

@@ -91,7 +91,8 @@ def get_current_prompt(db: Session) -> Prompt:
 def run_batch_analysis(
     post_ids: List[int], 
     prompt_text: str, 
-    selected_model: str
+    selected_model: str,
+    selected_prompt_name: str
 ) -> Dict:
     """
     一括分析の実行（DB接続、AIコール、DB保存）を行い、
@@ -145,7 +146,11 @@ def run_batch_analysis(
         new_balance = update_credit_balance(db, total_cost)
 
         # DBに保存
-        current_prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
+        # ⚠️ BUG FIX: 常に DEFAULT_PROMPT_KEY を参照していた部分を修正
+        # ▼▼▼【修正点】UIで選択されたプロンプト名を使ってDBから取得 ▼▼▼
+        current_prompt = db.query(Prompt).filter(Prompt.name == selected_prompt_name).first()
+        # ▲▲▲ 修正点ここまで ▲▲▲        
+        
         new_result = AnalysisResult(
             prompt_id = current_prompt.id if current_prompt else 1, 
             raw_json_response = ai_result_str, 
