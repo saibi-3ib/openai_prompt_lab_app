@@ -157,6 +157,12 @@
                     <div class="text-lg font-semibold">{{ result.prompt.name if result.prompt else 'N/A (ID: ' ~ result.prompt_id ~ ')' }}</div>
                 </div>
             </div>
+            
+            <div class="mb-4">
+                <div class="text-gray-500 font-semibold mb-1">トークン使用量</div>
+                <span class="tag">入力 (Prompt): {{ result.input_tokens | default(0) }}</span>
+                <span class="tag ml-2">出力 (Completion): {{ result.output_tokens | default(0) }}</span>
+            </div>
 
             <div class="mb-4 collapsible-container collapsed"> 
                 <div class="toggle-btn"> 

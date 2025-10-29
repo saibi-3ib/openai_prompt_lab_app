@@ -136,3 +136,11 @@ class AnalysisResult(Base):
     
     # 消費したクレジットの概算コスト (USD)
     cost_usd = Column(Float, nullable=True)
+
+    # ▼▼▼【ここから追加】▼▼▼
+    # 使用したトークン数 (入力)
+    input_tokens = Column(Integer, nullable=True) 
+    
+    # 使用したトークン数 (出力)
+    output_tokens = Column(Integer, nullable=True) 
+    # ▲▲▲【ここまで追加】▲▲▲

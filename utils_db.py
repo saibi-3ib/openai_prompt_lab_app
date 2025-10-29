@@ -156,7 +156,9 @@ def run_batch_analysis(
             raw_json_response = ai_result_str, 
             extracted_summary = summary,
             ai_model = selected_model,
-            cost_usd = total_cost            
+            cost_usd = total_cost,
+            input_tokens = usage_data.get("prompt_tokens", 0),  # 使用量を保存
+            output_tokens = usage_data.get("completion_tokens", 0) # 使用量を保存
         )
         for post in posts:
             new_result.posts.append(post)
