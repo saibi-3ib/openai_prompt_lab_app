@@ -1,6 +1,6 @@
 import os
 from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Table, Float
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Table, Float, UniqueConstraint
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime, timezone
 from flask_login import UserMixin
@@ -137,10 +137,69 @@ class AnalysisResult(Base):
     # 消費したクレジットの概算コスト (USD)
     cost_usd = Column(Float, nullable=True)
 
-    # ▼▼▼【ここから追加】▼▼▼
     # 使用したトークン数 (入力)
     input_tokens = Column(Integer, nullable=True) 
     
     # 使用したトークン数 (出力)
     output_tokens = Column(Integer, nullable=True) 
-    # ▲▲▲【ここまで追加】▲▲▲
+
+    # AIが抽出した銘柄コード (例: "AAPL,TSLA,MSFT")
+    extracted_tickers = Column(String, nullable=True, index=True) 
+
+class StockTickerMap(Base):
+    """S&P500などの銘柄と企業名、エイリアス（愛称）の変換表"""
+    __tablename__ = "stock_ticker_map"
+    
+    ticker = Column(String(10), primary_key=True) # "AAPL"
+    company_name = Column(String, nullable=False, index=True) # "Apple Inc."
+    # GICS Sector (例: 'Information Technology')
+    gics_sector = Column(String, nullable=True, index=True) 
+    # GICS Sub-Industry (例: 'Application Software')
+    gics_sub_industry = Column(String, nullable=True)
+
+
+class TickerSentiment(Base):
+    """投稿内の各銘柄に対するセンチメント分析結果"""
+    __tablename__ = "ticker_sentiment"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    
+    # どのバッチ分析に属しているか
+    analysis_result_id = Column(Integer, ForeignKey('analysis_results.id'), nullable=False, index=True)
+    # どの投稿に対する分析か
+    collected_post_id = Column(Integer, ForeignKey('collected_posts.id'), nullable=False, index=True)
+    # どの銘柄か (ティッカーで統一)
+    ticker = Column(String(10), ForeignKey('stock_ticker_map.ticker'), nullable=False, index=True)
+    
+    sentiment = Column(String(10), nullable=False) # "Positive", "Negative", "Neutral"
+    reasoning = Column(Text, nullable=True) # AIによる判断根拠
+    
+    # リレーションシップ (任意)
+    # analysis_result = relationship("AnalysisResult")
+    # collected_post = relationship("CollectedPost")
+    # stock_ticker = relationship("StockTickerMap")
+
+class UserTickerWeight(Base):
+    """
+    監視対象アカウント (TargetAccount) と銘柄 (StockTickerMap) の
+    関係性（重み）を「総言及回数」と「正規化比率」として蓄積するテーブル。
+    """
+    __tablename__ = "user_ticker_weights"
+    
+    id = Column(Integer, primary_key=True)
+    
+    # 外部キー: どの監視対象アカウントか
+    account_id = Column(Integer, ForeignKey('target_accounts.id'), nullable=False, index=True)
+    
+    # 外部キー: どの銘柄か
+    ticker = Column(String(10), ForeignKey('stock_ticker_map.ticker'), nullable=False, index=True)
+    
+    # 蓄積値 (言及回数) - フェーズ2で更新
+    total_mentions = Column(Integer, nullable=False, default=0)
+    
+    # 重み付け (正規化比率: 0.0 ～ 1.0) - フェーズ3で更新
+    weight_ratio = Column(Float, nullable=False, default=0.0, index=True)
+    
+    last_analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    __table_args__ = (UniqueConstraint('account_id', 'ticker', name='_account_ticker_uc'),)

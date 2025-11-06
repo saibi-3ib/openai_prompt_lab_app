@@ -4,6 +4,11 @@ import openai
 from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
+from datetime import datetime, timezone
+from models import (
+    SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, 
+    TargetAccount, StockTickerMap, TickerSentiment, UserTickerWeight
+)
 
 # --- 設定値と初期化 ---
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
@@ -97,6 +102,7 @@ def run_batch_analysis(
     """
     一括分析の実行（DB接続、AIコール、DB保存）を行い、
     JSONレスポンス用の辞書を返す。
+    (S&P500/センチメント/言及回数カウントアップ対応版)
     """
     if not client_openai:
         raise Exception("OpenAI API Key not configured.")
@@ -105,19 +111,46 @@ def run_batch_analysis(
 
     db = SessionLocal()
     try:
+        # --- 1. 分析対象の投稿データを取得 ---
         posts = db.query(CollectedPost).filter(CollectedPost.id.in_(post_ids)).all()
         if not posts:
             raise Exception("選択された投稿IDに対応するデータが見つかりませんでした。")
 
-        combined_texts = ""
-        for i, post in enumerate(posts):
-            combined_texts += f"--- POST {i+1} (ID:{post.post_id}) ---\n"
-            combined_texts += post.original_text + "\n\n"
+        # --- 2. (要件) 投稿から「監視対象アカウントID」を取得 ---
+        # (注: 要件に基づき、バッチ処理は単一アカウントの投稿のみと仮定)
+        first_post = posts[0]
+        target_account = db.query(TargetAccount).filter(TargetAccount.username == first_post.username).first()
         
+        if not target_account:
+            raise Exception(f"監視対象アカウント '{first_post.username}' が 'target_accounts' テーブルに登録されていません。")
+        
+        account_id_to_update = target_account.id
+
+        # --- 3. (要件) S&P500の辞書をDBから取得し、AIコンテキストを生成 ---
+        ticker_maps = db.query(StockTickerMap).all()
+        ticker_context = "--- 対象銘柄コンテキスト (ティッカー: 企業名, 愛称) ---\n"
+        for item in ticker_maps:
+            aliases = f", {item.aliases}" if item.aliases else ""
+            ticker_context += f"{item.ticker}: {item.company_name}{aliases}\n"
+        ticker_context += "-----------------------------------------------\n\n"
+        
+        # --- 4. (要件) AIに渡す投稿テキストとプロンプトを構築 ---
+        # (AIが投稿DB IDを特定できるよう、IDも渡す)
+        combined_texts = "--- 分析対象の投稿リスト ---\n"
+        for post in posts:
+            combined_texts += f"POST_DB_ID: {post.id}\n"
+            combined_texts += f"TEXT: {post.original_text}\n"
+            combined_texts += "---\n"
+
+        # プロンプトのプレースホルダーを置換
         full_prompt = prompt_text.replace("{texts}", combined_texts)
+        full_prompt = full_prompt.replace("{ticker_context}", ticker_context)
+        
+        # (フォールバック)
         full_prompt = full_prompt.replace("{text}", "[警告: {text} 変数は単数分析用です。{texts} を使用してください。]")
 
-        # AI呼び出し
+
+        # --- 5. AI呼び出し ---
         response = client_openai.chat.completions.create(
             model=selected_model,
             response_format={"type": "json_object"},
@@ -129,27 +162,18 @@ def run_batch_analysis(
         ai_result_str = response.choices[0].message.content
         usage_data = response.usage.model_dump()
 
-        # 結果のパース
+        # --- 6. 結果のパースとコスト計算 ---
         ai_result_json = json.loads(ai_result_str)
         
-        # ▼▼▼【ここを修正】▼▼▼
-        # 複数のキーを試行してサマリーを抽出 (overall_summary を最優先)
-        summary = ai_result_json.get("overall_summary", None) # (1) Comprehensive_v2 形式
-        if summary is None:
-            summary = ai_result_json.get("analysis_summary", None) # (2) Sentiment_v1 形式
-        if summary is None:
-            summary = ai_result_json.get("summary", "Summary not available.") # (3) default_summary 形式
-        # ▲▲▲【修正ここまで】▲▲▲
+        # (a) 全体サマリー (AnalysisResult用)
+        summary = ai_result_json.get("overall_summary", "Summary not available.")
         
-        # コスト計算と残高更新
+        # (b) コスト計算と残高更新
         total_cost = calculate_cost(selected_model, usage_data)
         new_balance = update_credit_balance(db, total_cost)
 
-        # DBに保存
-        # ⚠️ BUG FIX: 常に DEFAULT_PROMPT_KEY を参照していた部分を修正
-        # ▼▼▼【修正点】UIで選択されたプロンプト名を使ってDBから取得 ▼▼▼
+        # --- 7. DBに保存 (AnalysisResult - 親ログ) ---
         current_prompt = db.query(Prompt).filter(Prompt.name == selected_prompt_name).first()
-        # ▲▲▲ 修正点ここまで ▲▲▲        
         
         new_result = AnalysisResult(
             prompt_id = current_prompt.id if current_prompt else 1, 
@@ -157,16 +181,69 @@ def run_batch_analysis(
             extracted_summary = summary,
             ai_model = selected_model,
             cost_usd = total_cost,
-            input_tokens = usage_data.get("prompt_tokens", 0),  # 使用量を保存
-            output_tokens = usage_data.get("completion_tokens", 0) # 使用量を保存
+            input_tokens = usage_data.get("prompt_tokens", 0),
+            output_tokens = usage_data.get("completion_tokens", 0),
+            # (注: extracted_tickers は TickerSentiment に移行したため、ここは null のまま)
         )
+        # この分析がどの投稿を使ったかを紐付ける (多対多)
         for post in posts:
             new_result.posts.append(post)
         
         db.add(new_result)
+        db.flush() # new_result.id を確定させる (TickerSentiment で参照するため)
+
+        # --- 8. (要件) 詳細なセンチメント/言及回数の処理 ---
+        detailed_analysis = ai_result_json.get("detailed_analysis", [])
+
+        for post_analysis in detailed_analysis:
+            post_db_id = post_analysis.get("post_db_id")
+            ticker_sentiments = post_analysis.get("ticker_sentiments", [])
+
+            for sentiment_data in ticker_sentiments:
+                ticker = sentiment_data.get("ticker")
+                sentiment = sentiment_data.get("sentiment") # "Positive", "Negative", "Neutral"
+                reasoning = sentiment_data.get("reason", "")
+
+                if not (post_db_id and ticker and sentiment):
+                    print(f"Skipping invalid sentiment data: {sentiment_data}")
+                    continue 
+
+                # (処理 1) TickerSentiment (ログ) に保存
+                new_log = TickerSentiment(
+                    analysis_result_id = new_result.id,
+                    collected_post_id = post_db_id,
+                    ticker = ticker,
+                    sentiment = sentiment,
+                    reasoning = reasoning
+                )
+                db.add(new_log)
+
+                # (処理 2) UserTickerWeight (集計) を更新
+                # (既存の集計行を検索 (なければ作成))
+                weight_record = db.query(UserTickerWeight).filter_by(
+                    account_id = account_id_to_update,
+                    ticker = ticker
+                ).first()
+                
+                if not weight_record:
+                    weight_record = UserTickerWeight(
+                        account_id = account_id_to_update,
+                        ticker = ticker,
+                        total_mentions = 0, # (初期値)
+                        weight_ratio = 0.0  # (初期値)
+                    )
+                    db.add(weight_record)
+                
+                # ★要件: 「言及回数」を+1する (ポジ/ネガ問わず)
+                weight_record.total_mentions += 1
+                weight_record.last_analyzed_at = datetime.now(timezone.utc)
+                
+                # (注: weight_ratio の計算は、分離された 'calculate_weights.py' バッチで行う)
+        
+        # --- 9. コミット ---
         db.commit()
         
-        # 成功レスポンスを返す
+        # --- 10. 成功レスポンスを返す ---
         return {
             "status": "success", 
             "summary": summary, 
