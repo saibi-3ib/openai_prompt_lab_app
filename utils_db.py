@@ -116,15 +116,28 @@ def run_batch_analysis(
         if not posts:
             raise Exception("選択された投稿IDに対応するデータが見つかりませんでした。")
 
-        # --- 2. (要件) 投稿から「監視対象アカウントID」を取得 ---
+        # --- 2. (要件) 投稿から「監視対象アカウントID」を *取得または作成* ---
         # (注: 要件に基づき、バッチ処理は単一アカウントの投稿のみと仮定)
         first_post = posts[0]
-        target_account = db.query(TargetAccount).filter(TargetAccount.username == first_post.username).first()
+        username_to_process = first_post.username
+        
+        # 既存のアカウントを検索
+        target_account = db.query(TargetAccount).filter(TargetAccount.username == username_to_process).first()
         
         if not target_account:
-            raise Exception(f"監視対象アカウント '{first_post.username}' が 'target_accounts' テーブルに登録されていません。")
+            # 監視対象アカウントが見つからない場合、自動で新規登録する
+            print(f"Analysis target '{username_to_process}' not in 'target_accounts'. Auto-registering new account.")
+            target_account = TargetAccount(
+                username=username_to_process,
+                is_active=True,  # (手動インポートされたアカウントもアクティブとして登録)
+                added_at=datetime.now(timezone.utc)
+            )
+            db.add(target_account)
+            db.flush() # 新しい target_account.id を確定させる
         
+        # この分析で使うアカウントIDを確定
         account_id_to_update = target_account.id
+        print(f"Processing analysis for Account ID: {account_id_to_update} (Username: {username_to_process})")
 
         # --- 3. (要件) S&P500の辞書をDBから取得し、AIコンテキストを生成 ---
         ticker_maps = db.query(StockTickerMap).all()
