@@ -86,7 +86,8 @@
         .hover\:bg-gray-700:hover { background-color: #c3c283; }
 
         /* === ドロップダウンメニュー === */
-        #account-filter-menu {
+        #account-filter-menu,
+        #sector-filter-menu {
              /* (変更) メイン背景色(ダークブルー)にしてコントラストをつける */
              background-color: var(--color-base-bg); 
              border-color: var(--color-container-bg); /* 枠線はコンテナ色に */
@@ -112,7 +113,12 @@
             transition: height 0.3s ease-in-out;
             overflow: visible;
             flex-shrink: 0;
-            z-index: 10; 
+        }
+        #filter-pane-wrapper {
+             z-index: 20; /* (★) post-pane-header(z-10)より手前に表示 */
+        }
+        #action-pane-wrapper {
+             z-index: 10; /* (★) 従来通り */
         }
         #action-pane-toggle,
         #filter-pane-toggle {
@@ -246,22 +252,6 @@
         }
         #filter-ticker-input {
             min-width: 100px; /* 入力欄が小さくなりすぎないように */
-        }
-        /* ▼ ドロップダウンを常に最前面に表示させるための最終修正版 */
-        #account-filter-menu,
-        #sector-filter-menu {
-            position: fixed !important;  /* relative → fixed に変更 */
-            top: auto !important;
-            left: auto !important;
-            z-index: 1000 !important;
-            background-color: var(--color-base-bg);
-            border: 1px solid var(--color-container-bg);
-        }
-
-        /* ボタンの位置基準を取得できるように調整 */
-        #account-filter-btn,
-        #sector-filter-btn {
-            position: relative;
         }
     </style>
 </head>
