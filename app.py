@@ -12,7 +12,7 @@ import io
 from dotenv import load_dotenv
 
 # --- (変更) モデル定義とDB接続を models から持ってくる ---
-from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, User
+from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, User, TickerSentiment, StockTickerMap
 from datetime import datetime, timezone
 
 # --- ▼▼▼【新規】ロジックのインポート ▼▼▼ ---
@@ -26,24 +26,19 @@ from utils_db import (
 load_dotenv()
 app = Flask(__name__)
 
-# --- ▼▼▼【リファクタリング推奨】 ▼▼▼ ---
 # .env ファイルに FLASK_SECRET_KEY を必ず設定するようにします
 # (os.urandom() はサーバー再起動のたびにキーが変わり、セッションが切れるため非推奨)
 app.secret_key = os.environ.get('FLASK_SECRET_KEY')
 if not app.secret_key:
     raise ValueError("FLASK_SECRET_KEY が .env ファイルに設定されていません。")
-# --- ▲▲▲ リファクタリング ▲▲▲ ---
 
-# --- ▼▼▼【以下を追加】▼▼▼ ---
 # Flask-Login の初期化
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login' # 未ログイン時にリダイレクトされるページの関数名
 login_manager.login_message = "このページにアクセスするにはログインが必要です。" # flash メッセージ
 login_manager.login_message_category = "info" # flash メッセージのカテゴリ (任意)
-# --- ▲▲▲【追加ここまで】▲▲▲ ---
 
-# --- ▼▼▼【以下を追加】▼▼▼ ---
 # ユーザーローダー関数: ユーザーIDを元にユーザーオブジェクトを返す
 @login_manager.user_loader
 def load_user(user_id):
@@ -53,9 +48,7 @@ def load_user(user_id):
         return db.query(User).get(int(user_id))
     finally:
         db.close()
-# --- ▲▲▲【追加ここまで】▲▲▲ ---
 
-# --- ▼▼▼【以下を追加: パスワード関連関数】▼▼▼ ---
 def set_password(password):
     """ パスワードを受け取り、ハッシュ値を生成して返す """
     return generate_password_hash(password)
@@ -63,7 +56,6 @@ def set_password(password):
 def check_password(hashed_password, password):
     """ ハッシュ値と入力されたパスワードを比較して T/F を返す """
     return check_password_hash(hashed_password, password)
-# --- ▲▲▲【パスワード関連関数ここまで】▲▲▲ ---
 
 # --- メインページ (データ表示) ---
 @app.route('/')
@@ -79,13 +71,34 @@ def index():
         account_names_tuples = db.query(CollectedPost.username).distinct().order_by(CollectedPost.username).all()
         available_accounts = [name[0] for name in account_names_tuples]
         
+        # (新) セクターとサブセクターのペアをすべて取得
+        results = db.query(StockTickerMap.gics_sector, StockTickerMap.gics_sub_industry).distinct().all()
+        
+        sector_tree = {} # 例: {'Information Technology': {'Software', 'Semiconductors'}, ...}
+        
+        for sector, sub_sector in results:
+            if sector is None or sub_sector is None:
+                continue
+            if sector not in sector_tree:
+                sector_tree[sector] = set() # 重複を防ぐために Set を使用
+            sector_tree[sector].add(sub_sector)
+            
+        # Jinja2が使いやすいように、ソート済みのリストに変換
+        available_sector_tree = []
+        for sector_name in sorted(sector_tree.keys()):
+            available_sector_tree.append({
+                "name": sector_name,
+                "sub_sectors": sorted(list(sector_tree[sector_name]))
+            })
+
         return render_template(
             "index.html", 
             posts=posts, 
             current_provider=current_provider,
             current_credit=current_credit,
             available_models=AVAILABLE_MODELS,
-            available_accounts=available_accounts
+            available_accounts=available_accounts,
+            available_sector_tree=available_sector_tree
         )
     finally:
         db.close()
@@ -314,12 +327,47 @@ def filter_posts():
         likes = data.get('likes')
         rts = data.get('rts')
 
+        ticker_list = data.get('ticker')    # (これは前回修正済み)
+        sentiment = data.get('sentiment')
+        sectors = data.get('sector')        # (★ sector -> sectors 配列に変更)
+        sub_sectors = data.get('sub_sector') # (★ sub_sector -> sub_sectors 配列に変更)
+
         query = db.query(CollectedPost)
 
         if keyword:
             query = query.filter(CollectedPost.original_text.ilike(f"%%{keyword}%%"))
         if accounts:
             query = query.filter(CollectedPost.username.in_(accounts))
+        
+       # センチメントまたはティッカーでの絞り込み
+        if ticker_list or sentiment:
+            query = query.join(TickerSentiment, CollectedPost.id == TickerSentiment.collected_post_id)
+            
+            if ticker_list:
+                # (★ ilike ではなく 'in_' を使って配列で検索)
+                query = query.filter(TickerSentiment.ticker.in_(ticker_list))
+            
+            if sentiment:
+                query = query.filter(TickerSentiment.sentiment == sentiment)
+
+        # セクターまたはサブセクターでの絞り込み
+        if sectors or sub_sectors:
+            if not (ticker_list or sentiment):
+                 query = query.join(TickerSentiment, CollectedPost.id == TickerSentiment.collected_post_id)
+            
+            query = query.join(StockTickerMap, TickerSentiment.ticker == StockTickerMap.ticker)
+            
+            # (★ OR条件で絞り込み。sectors配列かsub_sectors配列の *いずれか* に一致)
+            filters = []
+            if sectors:
+                filters.append(StockTickerMap.gics_sector.in_(sectors))
+            if sub_sectors:
+                filters.append(StockTickerMap.gics_sub_industry.in_(sub_sectors))
+            
+            if filters:
+                from sqlalchemy import or_
+                query = query.filter(or_(*filters))
+        
         if likes is not None:
             try:
                 likes_int = int(likes)
@@ -356,6 +404,58 @@ def filter_posts():
     except Exception as e:
         db.rollback()
         error_msg = f"絞り込み処理中にエラーが発生しました: {str(e)}"
+        print(error_msg)
+        return jsonify({"status": "error", "message": error_msg}), 500
+    finally:
+        db.close()
+
+# --- APIルート: オートサジェスト (ティッカー/セクター) ---
+@app.route('/api/suggest', methods=['POST'])
+@login_required
+def suggest():
+    db = SessionLocal()
+    try:
+        # (★) request.args.get から request.get_json() に変更
+        data = request.get_json()
+        query = data.get('q', '').strip()
+        search_type = data.get('type', 'ticker') # 'ticker' or 'sector'
+
+        if not query:
+            return jsonify([])
+
+        results_list = []
+        
+        if search_type == 'ticker':
+            # StockTickerMap の ticker または company_name を検索
+            query_filter = (
+                StockTickerMap.ticker.ilike(f"%%{query}%%") |
+                StockTickerMap.company_name.ilike(f"%%{query}%%")
+            )
+            # (注: .limit(10) を追加し、候補が多すぎないようにする)
+            results = db.query(StockTickerMap).filter(query_filter).limit(10).all()
+            for r in results:
+                # (フロントエンドが使いやすいように "value" と "label" で返す)
+                results_list.append({
+                    "value": r.ticker,
+                    "label": f"{r.ticker} ({r.company_name})"
+                })
+        
+        elif search_type == 'sector':
+            # StockTickerMap の gics_sector を検索 (重複除去)
+            query_filter = StockTickerMap.gics_sector.ilike(f"%%{query}%%")
+            results = db.query(StockTickerMap.gics_sector).filter(query_filter).distinct().limit(10).all()
+            for r in results:
+                if r[0]: # (NULLを除外)
+                    results_list.append({
+                        "value": r[0],
+                        "label": r[0]
+                    })
+
+        return jsonify(results_list)
+    
+    except Exception as e:
+        db.rollback()
+        error_msg = f"サジェスト検索中にエラーが発生しました: {str(e)}"
         print(error_msg)
         return jsonify({"status": "error", "message": error_msg}), 500
     finally:

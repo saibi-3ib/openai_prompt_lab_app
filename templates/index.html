@@ -42,7 +42,8 @@
         
         /* === 下部ペインの入力欄の背景色統一 === */
         input, select, textarea,
-        #account-filter-btn, /* <-- 【追加】アカウント選択ボタン */
+        #account-filter-btn, /* <-- (変更) カンマを追加 */
+        #sector-filter-btn,  /* <-- 【ここを追加】 */
         #result-display { /* 結果表示エリアも */
             background-color: var(--color-base-bg) !important; /* ダークブルーで統一 */
             color: var(--color-text-primary);
@@ -105,36 +106,57 @@
             min-height: 0; /* flexアイテム内のスクロールに重要 */
         }
 
-        /* === 下部ペイン折りたたみ === */
-        #action-pane-wrapper {
+        /* === ペイン折りたたみ (共通スタイル) === */
+        #action-pane-wrapper,
+        #filter-pane-wrapper {
             transition: height 0.3s ease-in-out;
-            overflow: hidden;
+            overflow: visible;
             flex-shrink: 0;
-            z-index: 10;
+            z-index: 10; 
         }
-        #action-pane-toggle {
-            border-top: 1px solid var(--color-base-bg);
+        #action-pane-toggle,
+        #filter-pane-toggle {
             padding: 0.5rem 1rem;
             cursor: pointer;
             text-align: center;
             font-weight: bold;
             font-size: 0.875rem;
             color: var(--color-accent);
+            background-color: var(--color-container-bg); 
+            border-top: 1px solid var(--color-base-bg);
+            border-bottom: 1px solid var(--color-base-bg);
         }
-        #action-pane-toggle:hover {
+        #action-pane-toggle:hover,
+        #filter-pane-toggle:hover {
             background-color: var(--color-base-bg);
         }
+        
+        /* (★) アクションペインは既存のスタイルを維持 */
         #action-pane-content {
-            /* height: 25vh; を削除 (min-height で制御) */
-            min-height: 200px; /* 最小高さを指定 */
+            min-height: 200px; /* 下部ペインのみ最小高さ */
             padding: 1rem;
             border-top: 1px solid var(--color-base-bg);
         }
-        #action-pane-wrapper.collapsed {
-            height: 37px;
+
+        #action-pane-wrapper.collapsed,
+        #filter-pane-wrapper.collapsed {
+            height: 37px; /* トグルボタンの高さ */
         }
-        #action-pane-wrapper.collapsed #action-pane-content {
+        
+        #action-pane-wrapper.collapsed #action-pane-content,
+        #filter-pane-wrapper.collapsed #filter-pane-content {
             display: none;
+        }
+
+        /* (★) アイコン回転 (CSS制御) */
+        .toggle-icon {
+             display: inline-block;
+             transition: transform 0.3s ease;
+             transform: rotate(0deg); /* 閉じた状態 (▼) */
+        }
+        #action-pane-wrapper:not(.collapsed) #action-pane-toggle .toggle-icon,
+        #filter-pane-wrapper:not(.collapsed) #filter-pane-toggle .toggle-icon {
+             transform: rotate(180deg); /* 開いた状態 (▲) */
         }
 
         /* === ポスト本文 (改行表示とMoreボタン) === */
@@ -159,13 +181,11 @@
             border-color: var(--color-base-bg);
             transition: background-color 0.15s ease-in-out; /* ホバーアニメーションを追加 */
         }
-        /* ▲▲▲ 修正ここまで ▲▲▲ */
 
         /* === ▼▼▼ 【修正】未選択ポストのホバー色 ▼▼▼ === */
         .post-item:not(.selected):hover {
             background-color: var(--color-container-bg); /* ★ ダークグリーンに変更 (元のコンテナ色) */
         }
-        /* ▲▲▲ 修正ここまで ▲▲▲ */
 
         /* === ▼▼▼ 【修正】未選択ポストのホバー色 ▼▼▼ === */
         .post-item:not(.selected):hover {
@@ -177,7 +197,72 @@
         .post-username {
             color: var(--color-accent); /* (4) アクセント (ライム) */
         }
-        /* ▲▲▲【ここまで追加】▲▲▲ */
+
+        /* ▼▼▼【ここから追加】サジェスト機能のスタイル ▼▼▼ */
+        .autocomplete-container {
+            position: relative; /* 候補リストの基準点 */
+        }
+        .autocomplete-suggestions {
+            position: absolute;
+            top: 100%; /* 入力欄の真下に表示 */
+            left: 0;
+            right: 0;
+            background-color: var(--color-base-bg); /* メイン背景色 */
+            border: 1px solid var(--color-container-bg);
+            border-top: none;
+            max-height: 200px;
+            overflow-y: auto;
+            z-index: 999; /* 最前面に表示 */
+        }
+        .autocomplete-suggestion {
+            padding: 0.5rem 0.75rem;
+            color: var(--color-text-primary);
+            cursor: pointer;
+            font-size: 0.875rem; /* 14px */
+        }
+        .autocomplete-suggestion:hover,
+        .autocomplete-suggestion.active {
+            background-color: var(--color-container-bg); /* ホバー色 */
+        }
+        /* ▼▼▼【ここから追加】ティッカータグのスタイル ▼▼▼ */
+        .ticker-tag {
+            display: flex;
+            align-items: center;
+            background-color: var(--color-selected-bg); /* 選択色 */
+            color: #000; /* 暗い文字色 */
+            padding: 0.25rem 0.5rem;
+            border-radius: 4px;
+            font-size: 0.875rem; /* 14px */
+            font-weight: 500;
+            white-space: nowrap;
+        }
+        .ticker-tag-remove {
+            margin-left: 0.5rem;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        .ticker-tag-remove:hover {
+            color: #db2727; /* 赤色 */
+        }
+        #filter-ticker-input {
+            min-width: 100px; /* 入力欄が小さくなりすぎないように */
+        }
+        /* ▼ ドロップダウンを常に最前面に表示させるための最終修正版 */
+        #account-filter-menu,
+        #sector-filter-menu {
+            position: fixed !important;  /* relative → fixed に変更 */
+            top: auto !important;
+            left: auto !important;
+            z-index: 1000 !important;
+            background-color: var(--color-base-bg);
+            border: 1px solid var(--color-container-bg);
+        }
+
+        /* ボタンの位置基準を取得できるように調整 */
+        #account-filter-btn,
+        #sector-filter-btn {
+            position: relative;
+        }
     </style>
 </head>
 
@@ -202,56 +287,120 @@
     </header>
 
     <div class="layout-wrapper">
-        
-        <div id="filter-pane" class="flex-shrink-0 border-b p-3 shadow-md z-20">
-            <div class="flex items-center space-x-4">
-                <div class="flex-1">
-                    <label for="filter-keyword" class="text-xs font-semibold text-gray-400">キーワード</label>
-                    <input type="text" id="filter-keyword" placeholder="本文テキストで絞り込み..." class="w-full text-sm rounded px-2 py-1 placeholder-gray-500">
-                </div>
-                <div class="relative">
-                    <label class="text-xs font-semibold text-gray-400">アカウント</label>
-                    <button id="account-filter-btn" class="w-full mt-1 text-sm rounded px-2 py-1 text-left flex justify-between items-center" style="width: 12rem;">
-                        <span id="account-filter-label">すべてのアカウント</span>
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
-                    </button>
-                    <div id="account-filter-menu" class="hidden absolute left-0 mt-1 w-full rounded shadow-lg z-20">
-                        <ul class="max-h-48 overflow-y-auto p-2 space-y-1">
-                            {% for account_name in available_accounts %}
-                            <li>
-                                <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
-                                    <input type="checkbox" class="account-filter-checkbox form-checkbox bg-gray-800 border-gray-500 text-blue-500" 
-                                           value="{{ account_name }}">
-                                    <span>{{ account_name }}</span>
-                                </label>
-                            </li>
-                            {% else %}
-                            <li>
-                                <span class="px-2 py-1 text-sm text-gray-400 italic">(アカウントデータがありません)</span>
-                            </li>
-                            {% endfor %}
-                        </ul>
-                    </div>
-                </div>
-                <div class="flex space-x-2">
-                    <div>
-                        <label for="filter-likes" class="text-xs font-semibold text-gray-400">いいね (n以上)</label>
-                        <input type="number" id="filter-likes" class="w-20 text-sm rounded px-2 py-1" placeholder="0">
-                    </div>
-                    <div>
-                        <label for="filter-rts" class="text-xs font-semibold text-gray-400">RT (n以上)</label>
-                        <input type="number" id="filter-rts" class="w-20 text-sm rounded px-2 py-1" placeholder="0">
-                    </div>
-                </div>
-                <div class="flex items-end space-x-2 h-full pt-4">
-                    <button id="filter-run-btn" class="bg-blue-600 hover:bg-blue-700 font-bold py-1 px-4 rounded transition duration-200">
-                        絞り込み
-                    </button>
-                    <button id="filter-reset-btn" class="bg-gray-600 hover:bg-gray-700 text-xs py-1 px-2 rounded transition duration-200">
-                        リセット
-                    </button>
-                </div>
+
+        <div id="filter-pane-wrapper" class="collapsed"> 
+            <div id="filter-pane-toggle"> <span class="toggle-icon">▼</span> 絞り込みフィルター <span class="toggle-icon">▼</span>
             </div>
+            <div id="filter-pane-content" class="flex-shrink-0 border-b p-3 shadow-md z-10" style="background-color: var(--color-container-bg);">    
+                <div class="flex items-center space-x-4 mb-3">
+                    
+                    <div class="flex-1">
+                        <label for="filter-keyword" class="text-xs font-semibold text-gray-400">キーワード</label>
+                        <input type="text" id="filter-keyword" placeholder="本文テキスト..." class="w-full text-sm rounded px-2 py-1 placeholder-gray-500">
+                    </div>
+
+                    <div class="flex-1">
+                        <label for="filter-ticker-input" class="text-xs font-semibold text-gray-400">ティッカー (複数選択可)</label>
+                        <div id="ticker-tags-container" class="w-full flex flex-wrap gap-1 p-1 rounded mt-1" style="background-color: var(--color-base-bg); border: 1px solid var(--color-container-bg); min-height: 38px;">
+                            <div class="autocomplete-container flex-grow relative">
+                                <input type="text" id="filter-ticker-input" placeholder="ティッカー検索..." class="w-full bg-transparent outline-none p-1" autocomplete="off" style="min-width: 120px;">
+                                <div id="ticker-suggestions" class="autocomplete-suggestions hidden"></div> 
+                            </div>
+                        </div>
+                    </div>
+                    
+                </div>
+
+                <div class="flex items-end space-x-4">
+                    
+                    <div class="relative flex-1">
+                        <label class="text-xs font-semibold text-gray-400">アカウント</label>
+                        <button id="account-filter-btn" class="w-full mt-1 text-sm rounded px-2 py-1 text-left flex justify-between items-center">
+                            <span id="account-filter-label">すべてのアカウント</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div id="account-filter-menu" class="hidden absolute left-0 mt-1 w-full rounded shadow-lg z-20 overflow-y-auto" style="max-height: 400px;">
+                            <ul class="p-1">
+                                
+                            {% for account_name in available_accounts %}
+                                <li>
+                                    <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
+                                        <input type="checkbox" class="account-filter-checkbox form-checkbox" value="{{ account_name }}">
+                                        <span>{{ account_name }}</span>
+                                    </label>
+                                </li>
+                            {% endfor %}
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="relative flex-1">
+                        <label class="text-xs font-semibold text-gray-400">セクター / サブセクター</label>
+                        <button id="sector-filter-btn" class="w-full mt-1 text-sm rounded px-2 py-1 text-left flex justify-between items-center">
+                            <span id="sector-filter-label">すべて</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                        </button>
+                        <div id="sector-filter-menu" class="hidden absolute left-0 mt-1 w-full rounded shadow-lg z-20 overflow-y-auto" style="max-height: 400px;">
+                            
+                            <ul class="p-1">
+                            {% for sector in available_sector_tree %}
+                                <li> 
+                                    <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer font-bold">
+                                        <input type="checkbox" class="sector-parent-cb form-checkbox" 
+                                            value="{{ sector.name }}" data-sector-name="{{ sector.name }}">
+                                        <span>{{ sector.name }}</span>
+                                    </label>
+                                    
+                                    <ul class="ml-4">
+                                        {% for sub_sector in sector.sub_sectors %}
+                                        <li> 
+                                            <label class="flex items-center space-x-2 px-2 py-1 text-sm rounded hover:bg-gray-600 cursor-pointer">
+                                                <input type="checkbox" class="sector-child-cb form-checkbox" 
+                                                    value="{{ sub_sector }}" data-parent-sector="{{ sector.name }}">
+                                                <span>{{ sub_sector }}</span>
+                                            </label>
+                                        </li>
+                                        {% endfor %}
+                                    </ul>
+                                </li>
+                            {% endfor %}
+                            </ul>
+                            
+                        </div>
+                    </div>
+
+                    <div class="w-40">
+                        <label for="filter-sentiment" class="text-xs font-semibold text-gray-400">センチメント</label>
+                        <select id="filter-sentiment" class="w-full text-sm rounded px-2 py-1 mt-1">
+                            <option value="">すべて</option>
+                            <option value="Positive">Positive</option>
+                            <option value="Negative">Negative</option>
+                            <option value="Neutral">Neutral</option>
+                        </select>
+                    </div>
+
+                    <div class="flex space-x-2">
+                        <div>
+                            <label for="filter-likes" class="text-xs font-semibold text-gray-400">いいね (n以上)</label>
+                            <input type="number" id="filter-likes" class="w-20 text-sm rounded px-2 py-1" placeholder="0">
+                        </div>
+                        <div>
+                            <label for="filter-rts" class="text-xs font-semibold text-gray-400">RT (n以上)</label>
+                            <input type="number" id="filter-rts" class="w-20 text-sm rounded px-2 py-1" placeholder="0">
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-end space-x-2 h-full">
+                        <button id="filter-run-btn" class="bg-blue-600 hover:bg-blue-700 font-bold py-1 px-4 rounded transition duration-200">
+                            絞り込み
+                        </button>
+                        <button id="filter-reset-btn" class="bg-gray-600 hover:bg-gray-700 text-xs py-1 px-2 rounded transition duration-200">
+                            リセット
+                        </button>
+                    </div>
+                    
+                </div>
+            </div> 
         </div>
 
         <div id="post-pane" class="flex-1 overflow-y-auto p-3 space-y-2">
@@ -292,10 +441,12 @@
                 </div>
                 {% endfor %}
             </div>
-        </div> <div id="action-pane-wrapper" class="collapsed">
+        </div> 
+
+        <div id="action-pane-wrapper" class="collapsed">
             
             <div id="action-pane-toggle">
-                <span id="toggle-icon">▲</span> プロンプト & 実行結果 <span id="toggle-icon-2">▲</span>
+                <span class="toggle-icon">▼</span> プロンプト & 実行結果 <span class="toggle-icon">▼</span>
             </div>
             
             <div id="action-pane-content">
@@ -333,7 +484,9 @@
                     </div>
                 </div>
             </div> 
-        </div> </div> 
+        </div> 
+    </div> 
+
 <script>
     document.addEventListener('DOMContentLoaded', () => {
         
@@ -354,7 +507,13 @@
         const filterRunBtn = document.getElementById('filter-run-btn');
         const filterResetBtn = document.getElementById('filter-reset-btn');
 
-        // ▼▼▼【ここから追加】▼▼▼
+        // ▼▼▼【★☆★ 修正箇所 ★☆★】▼▼▼
+        // セクター関連の変数を、使用する *前* (ここ) で定義します
+        const sectorFilterBtn = document.getElementById('sector-filter-btn');
+        const sectorFilterMenu = document.getElementById('sector-filter-menu');
+        const sectorFilterLabel = document.getElementById('sector-filter-label');
+        // ▲▲▲【★☆★ 修正完了 ★☆★】▲▲▲
+
         // プロンプトUI要素
         const promptSelect = document.getElementById('prompt-select');
         const promptEditor = document.getElementById('prompt-editor');
@@ -559,6 +718,12 @@
             const likes = filterLikesInput.value ? parseInt(filterLikesInput.value, 10) : null;
             const rts = filterRtsInput.value ? parseInt(filterRtsInput.value, 10) : null;
             
+            const tickerTags = document.querySelectorAll('#ticker-tags-container .ticker-tag');
+            const ticker_list = Array.from(tickerTags).map(tag => tag.dataset.value);
+            const sentiment = document.getElementById('filter-sentiment').value;
+            const selectedSectors = Array.from(document.querySelectorAll('.sector-parent-cb:checked')).map(cb => cb.value);
+            const selectedSubSectors = Array.from(document.querySelectorAll('.sector-child-cb:checked')).map(cb => cb.value);
+
             // 選択されたアカウント名のリストを取得
             const selectedAccountCheckboxes = document.querySelectorAll('.account-filter-checkbox:checked');
             const accounts = Array.from(selectedAccountCheckboxes).map(cb => cb.value);
@@ -585,7 +750,12 @@
                         keyword: keyword,
                         accounts: accounts,
                         likes: likes,
-                        rts: rts
+                        rts: rts,
+
+                        ticker: ticker_list,
+                        sector: selectedSectors,
+                        sub_sector: selectedSubSectors,
+                        sentiment: sentiment
                     })
                 });
 
@@ -628,8 +798,78 @@
             if (!accountFilterBtn.contains(e.target) && !accountFilterMenu.contains(e.target)) {
                 accountFilterMenu.classList.add('hidden');
             }
+            if (sectorFilterBtn && !sectorFilterBtn.contains(e.target) && !sectorFilterMenu.contains(e.target)) {
+                sectorFilterMenu.classList.add('hidden');
+            }
         });
+        
+        // ▼▼▼【ここから追加】階層型セクターフィルターのJSロジック ▼▼▼
+        
+        // (★注★) 変数定義はスクリプト上部に移動済み
 
+        if (sectorFilterBtn && sectorFilterMenu) {
+            // (1) ドロップダウンの表示/非表示
+            sectorFilterBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sectorFilterMenu.classList.toggle('hidden');
+            });
+
+            // (2) 親子の連動 (要件 3b)
+            sectorFilterMenu.addEventListener('change', (e) => {
+                // (親 -> 子)
+                if (e.target.classList.contains('sector-parent-cb')) {
+                    const parentName = e.target.dataset.sectorName;
+                    const isChecked = e.target.checked;
+                    // (自分に関連する子チェックボックスをすべて選択/解除)
+                    const children = sectorFilterMenu.querySelectorAll(`.sector-child-cb[data-parent-sector="${parentName}"]`);
+                    children.forEach(child => child.checked = isChecked);
+                }
+                
+                // (子 -> 親)
+                if (e.target.classList.contains('sector-child-cb')) {
+                    const parentName = e.target.dataset.parentSector;
+                    const parentCheckbox = sectorFilterMenu.querySelector(`.sector-parent-cb[data-sector-name="${parentName}"]`);
+                    if (parentCheckbox) {
+                        // (自分に関連する兄弟を取得)
+                        const siblings = sectorFilterMenu.querySelectorAll(`.sector-child-cb[data-parent-sector="${parentName}"]`);
+                        const allChecked = Array.from(siblings).every(child => child.checked);
+                        const noneChecked = Array.from(siblings).every(child => !child.checked);
+                        
+                        // (すべてチェックされたら親もチェック)
+                        if (allChecked) {
+                            parentCheckbox.checked = true;
+                            parentCheckbox.indeterminate = false;
+                        } 
+                        // (一部だけチェックされたら、親は「-」表示 (indeterminate))
+                        else if (!noneChecked) {
+                            parentCheckbox.checked = false;
+                            parentCheckbox.indeterminate = true;
+                        } 
+                        // (すべてOFFなら親もOFF)
+                        else {
+                            parentCheckbox.checked = false;
+                            parentCheckbox.indeterminate = false;
+                        }
+                    }
+                }
+                
+                // (★ ラベル更新)
+                updateFilterLabels();
+            });
+        }
+        
+        // (★ ラベル更新を共通関数化)
+        function updateFilterLabels() {
+            // アカウント
+            const selectedAccounts = document.querySelectorAll('.account-filter-checkbox:checked').length;
+            accountFilterLabel.textContent = selectedAccounts === 0 ? 'すべてのアカウント' : `${selectedAccounts}件のアカウント選択中`;
+            
+            // セクター
+            const selectedSectors = document.querySelectorAll('.sector-parent-cb:checked, .sector-child-cb:checked').length;
+            if (sectorFilterLabel) {
+                sectorFilterLabel.textContent = selectedSectors === 0 ? 'すべて' : `${selectedSectors}件のセクター選択中`;
+            }
+        }
 
         // --- 5. 一括分析実行ボタン (API連携) ---
         const analyzeBatchBtn = document.getElementById('analyze-batch-btn');
@@ -677,23 +917,18 @@
                             creditMonitor.textContent = '$' + result.new_balance_usd.toFixed(6);
                         }
 
-                        // 1. 生JSONをパースして、中身をローカルで確認する
-                        const rawOutput = JSON.parse(result.raw_json);
+                        // ▼▼▼【ここからロジックを大幅に修正】▼▼▼
                         
-                        // 2. 表示用のサマリー
+                        // 1. (変更) 生JSONはもうパースしない。
+                        // const rawOutput = JSON.parse(result.raw_json); // <-- エラーの原因。この行を削除。
+
+                        // 2. 表示用のサマリー (utils_db.py で集計済みのもの)
                         const displaySummary = result.summary;
                         
-                        // 3. 詳細分析の件数をカウント
-                        let detailCount = 0;
-                        if (rawOutput.detailed_analysis && Array.isArray(rawOutput.detailed_analysis)) {
-                            detailCount = rawOutput.detailed_analysis.length;
-                        }
-
-                        // 4. 生JSONを整形
-                        const prettyJson = JSON.stringify(rawOutput, null, 2);
+                        // 3. (変更) 生JSONの代わりに、DB保存メッセージを表示
+                        const rawJsonMessage = result.raw_json; // "Aggregated..." という文字列が入る
                         
-                        // 5. コスト情報とトークン情報 (★ここが重要：変数を定義)
-                        // costInfo と usageData、tokenInfo をここで確実に定義します
+                        // 4. コスト情報とトークン情報 (utils_db.py で集計済みのもの)
                         const usageData = result.usage;
                         const costInfo = result.cost_usd ? 
                             `<span class="text-yellow-500 font-bold">$${result.cost_usd.toFixed(6)} USD</span> (Model: ${result.model})` 
@@ -703,21 +938,17 @@
                             : 'トークン情報なし';
 
                         
-                        // 6. 結果HTMLを構築 (★定義済みの変数を参照)
+                        // 5. 結果HTMLを構築
                         let resultHtml = `<p class="text-green-400 font-bold">✅ 一括分析成功 (${result.analyzed_count}件)</p>
                                           <p class="mt-2 text-sm">コスト: ${costInfo}</p>
-                                          <p class="mt-1 text-sm">${tokenInfo}</p>`; // トークン情報を追加
-
-                        // (新機能) 詳細分析の件数を表示
-                        if (detailCount > 0) {
-                            resultHtml += `<p class="mt-2 text-xs text-gray-400">(${detailCount}件の詳細分析を含む)</p>`;
-                        }
+                                          <p class="mt-1 text-sm">${tokenInfo}</p>`;
 
                         resultHtml += `<p class="mt-3 font-semibold text-gray-300">概要 (Summary):</p>
                                        <p class="text-sm italic">${escapeHtml(displaySummary)}</p>`; // メインサマリー
 
-                        resultHtml += `<p class="mt-3 font-semibold text-gray-300">生JSON (DB格納データ):</p>
-                                       <pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${prettyJson}</pre>
+                        // (変更) 生JSONの代わりに、集計メッセージを表示
+                        resultHtml += `<p class="mt-3 font-semibold text-gray-300">DB格納ステータス:</p>
+                                       <pre class="text-xs bg-gray-800 p-2 rounded mt-1 overflow-x-auto">${escapeHtml(rawJsonMessage)}</pre>
                                        <p class="text-xs text-gray-500 mt-2">（結果ID: ${result.result_id} がDBに保存されました）</p>`;
                         
                         resultDisplay.innerHTML = resultHtml;
@@ -744,23 +975,30 @@
             console.error("Analyze button or model select element not found.");
         }
             
-        // --- 6. 下部ペイン折りたたみ機能 ---
+        // --- 6. ペイン折りたたみ機能 (共通化) ---
         try {
-            const wrapper = document.getElementById('action-pane-wrapper');
-            const toggleBtn = document.getElementById('action-pane-toggle');
-            const icon1 = document.getElementById('toggle-icon');
-            const icon2 = document.getElementById('toggle-icon-2');
+            // (★) 下部ペイン
+            const actionWrapper = document.getElementById('action-pane-wrapper');
+            const actionToggleBtn = document.getElementById('action-pane-toggle');
             
-            if (toggleBtn && wrapper) {
-                toggleBtn.addEventListener('click', () => {
-                    const isCollapsed = wrapper.classList.toggle('collapsed');
-                    if (isCollapsed) {
-                        icon1.textContent = '▲'; icon2.textContent = '▲';
-                    } else {
-                        icon1.textContent = '▼'; icon2.textContent = '▼';
-                    }
+            if (actionToggleBtn && actionWrapper) {
+                actionToggleBtn.addEventListener('click', () => {
+                    actionWrapper.classList.toggle('collapsed');
+                    // (★) アイコンのテキスト変更ロジックは削除 (CSSが担当)
                 });
             }
+
+            // ▼▼▼【ここから追加】上部フィルターペイン ▼▼▼
+            const filterWrapper = document.getElementById('filter-pane-wrapper');
+            const filterToggleBtn = document.getElementById('filter-pane-toggle');
+            
+            if (filterToggleBtn && filterWrapper) {
+                filterToggleBtn.addEventListener('click', () => {
+                    filterWrapper.classList.toggle('collapsed');
+                });
+            }
+            // ▲▲▲【ここまで追加】▲▲▲
+
         } catch (error) { console.error("Fatal error during collapsible pane setup:", error); }
         
         // --- 7. 初期読み込み時のテキスト処理 ---
@@ -1013,7 +1251,139 @@
         // (追加) プロンプトドロップダウンを初期化
         loadPromptsIntoDropdown();
         
-        // ▲▲▲【ここまで追加】▲▲▲
+
+        /**
+         * オートサジェスト機能を入力欄にバインドするヘルパー関数
+         * (★ 複数タグ入力UIに対応)
+         * @param {string} inputId - 入力欄 (input) のID ('filter-ticker-input')
+         * @param {string} suggestionsId - 候補表示 (div) のID
+         * @param {string} searchType - APIに渡す 'type' (ticker)
+         */
+        function setupAutocomplete(inputId, suggestionsId, searchType) {
+            const inputEl = document.getElementById(inputId);
+            const suggestionsEl = document.getElementById(suggestionsId);
+            const tagsContainer = document.getElementById('ticker-tags-container');
+            
+            // (★ 選択済みのティッカーを保持する Set)
+            const selectedTickers = new Set();
+
+            let debounceTimer;
+
+            // (★ 新しいタグをDOMに追加する関数)
+            function addTag(value, label) {
+                const tickerValue = value.toUpperCase(); // (大文字に統一)
+                if (selectedTickers.has(tickerValue)) { // 重複防止
+                    inputEl.value = ''; // 入力欄だけクリア
+                    return;
+                }
+                
+                selectedTickers.add(tickerValue);
+
+                const tagDiv = document.createElement('div');
+                tagDiv.className = 'ticker-tag';
+                tagDiv.dataset.value = tickerValue;
+                tagDiv.textContent = tickerValue; // (シンプルにティッカーのみ表示)
+                
+                const removeBtn = document.createElement('span');
+                removeBtn.className = 'ticker-tag-remove';
+                removeBtn.textContent = 'x';
+                
+                removeBtn.addEventListener('click', () => {
+                    selectedTickers.delete(tickerValue);
+                    tagDiv.remove();
+                });
+                
+                tagDiv.appendChild(removeBtn);
+                
+                // (★ 入力欄 (inputEl) の *親コンテナ* の *前* にタグを挿入)
+                inputEl.parentElement.before(tagDiv);
+                
+                // (★ 入力欄をクリアし、サジェストを隠す)
+                inputEl.value = '';
+                suggestionsEl.innerHTML = '';
+                suggestionsEl.classList.add('hidden');
+                inputEl.focus(); // (続けて入力できるようにフォーカスを維持)
+            }
+
+            inputEl.addEventListener('input', () => {
+                // ... (デバウンス処理は変更なし) ...
+                
+                debounceTimer = setTimeout(async () => {
+                    const query = inputEl.value.trim(); // (★タイマー内で値を取得)
+                    if (query.length < 1) { // (1文字から検索開始)
+                        suggestionsEl.innerHTML = '';
+                        suggestionsEl.classList.add('hidden');
+                        return;
+                    }
+                    
+                    try {
+                        const response = await fetch(`/api/suggest`, {
+                            method: 'POST', // (★) GETからPOSTに変更
+                            headers: {
+                                'Content-Type': 'application/json'
+                            },
+                            // (★) credentials: 'same-origin' はローカルでは不要
+                            body: JSON.stringify({ // (★) クエリを body で送信
+                                type: searchType,
+                                q: query
+                            })
+                        });
+                        
+                        const suggestions = await response.json();
+
+                        if (suggestions.length > 0) {
+                            suggestionsEl.innerHTML = ''; 
+                            suggestions.forEach(item => {
+                                const div = document.createElement('div');
+                                div.className = 'autocomplete-suggestion';
+                                div.textContent = item.label; // "AAPL (Apple Inc.)"
+                                
+                                // ▼▼▼【ここを修正】クリック時の動作 ▼▼▼
+                                div.addEventListener('click', () => {
+                                    // (★ inputEl.value に設定するのではなく、タグ追加関数を呼ぶ)
+                                    addTag(item.value, item.label);
+                                });
+                                // ▲▲▲【修正ここまで】▲▲▲
+                                
+                                suggestionsEl.appendChild(div);
+                            });
+                            suggestionsEl.classList.remove('hidden');
+                        } else {
+                            suggestionsEl.innerHTML = '';
+                            suggestionsEl.classList.add('hidden');
+                        }
+                    } catch (error) {
+                         // ... (エラー処理は変更なし) ...
+                    }
+                }, 300);
+            });
+            
+            // (★ Enterキーでもタグを追加できるようにする)
+            inputEl.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && inputEl.value.trim() !== '') {
+                    e.preventDefault(); // フォーム送信を防ぐ
+                    // (★ 現在入力中のテキストをそのままタグにする - サジェスト候補以外も許可)
+                    addTag(inputEl.value.trim(), inputEl.value.trim());
+                }
+            });
+
+            // (★ タグコンテナ自体をクリックしても入力欄にフォーカスする)
+            tagsContainer.addEventListener('click', (e) => {
+                if (e.target === tagsContainer) {
+                    inputEl.focus();
+                }
+            });
+
+            // (★ 外側クリックでサジェストを閉じるのは変更なし)
+            document.addEventListener('click', (e) => {
+                if (!tagsContainer.contains(e.target) && !suggestionsEl.contains(e.target)) {
+                    suggestionsEl.classList.add('hidden');
+                }
+            });
+        }
+
+        // --- 11. オートサジェスト機能の初期化 ---
+        setupAutocomplete('filter-ticker-input', 'ticker-suggestions', 'ticker');        
 
     });
 </script>
