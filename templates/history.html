@@ -203,19 +203,64 @@
             </div>
             
 
-            <div class="collapsible-container collapsed"> 
-                <div class="toggle-btn"> 
-                    <span class="icon">►</span>
-                    <h4 class="text-md font-semibold text-gray-400">
-                        生JSONレスポンス - <span class="toggle-text">詳細を表示</span>
-                    </h4>
-                </div>
-                <div class="collapsible-content"> 
-                    <pre>{{ result.raw_json_response or 'N/A' }}</pre>
+            <div>
+                <h4 class="text-md font-semibold mb-2 text-gray-400">
+                    📈 AI分析結果（銘柄別）
+                </h4>
+                
+                <div class="overflow-x-auto rounded-lg border border-gray-700">
+                    <table class="min-w-full divide-y divide-gray-700">
+                        <thead class="bg-gray-800">
+                            <tr>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">投稿</th>
+                                <th scope="col" class="w-20 px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">銘柄</th>
+                                <th scope="col" class="w-24 px-3 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">判断</th>
+                                <th scope="col" class="px-4 py-2 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">AIによる判断根拠</th>
+                            </tr>
+                        </thead>
+                        <tbody class="bg-gray-900 divide-y divide-gray-700">
+                            
+                            {% for post_id, sentiments_group_iter in result.sentiments | groupby('collected_post_id') %}
+                                
+                                {% set sentiments_group = sentiments_group_iter | list %}
+                                {% set post = sentiments_group[0].collected_post %}
+
+                                {% for sentiment in sentiments_group %}
+                                <tr class="hover:bg-gray-800">
+                                    
+                                    {% if loop.first %}
+                                    <td class="px-4 py-2 whitespace-normal text-sm text-gray-300 align-top" 
+                                        rowspan="{{ sentiments_group | length }}"> <p class="font-bold text-gray-400">@{{ post.username }}</p>
+                                        <p class="mt-1" style="white-space: pre-wrap;">{{ post.original_text }}</p>
+                                    </td>
+                                    {% endif %}
+                                    
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm font-bold text-blue-400 align-top">{{ sentiment.ticker }}</td>
+                                    <td class="px-3 py-2 whitespace-nowrap text-sm font-semibold align-top">
+                                        {% if sentiment.sentiment == 'Positive' %}
+                                            <span class="text-green-400">Positive</span>
+                                        {% elif sentiment.sentiment == 'Negative' %}
+                                            <span class="text-red-400">Negative</span>
+                                        {% else %}
+                                            <span class="text-gray-400">{{ sentiment.sentiment }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td class="px-4 py-2 whitespace-normal text-sm text-gray-400 align-top">{{ sentiment.reasoning }}</td>
+                                </tr>
+                                {% endfor %}
+                            
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="px-4 py-4 text-center text-sm text-gray-500 italic">
+                                    このバッチには個別のセンチメント分析結果がありません。
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
-
-        </div>
+            </div>
         {% endfor %}
         </main>
 

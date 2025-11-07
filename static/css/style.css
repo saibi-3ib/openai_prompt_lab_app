@@ -1,0 +1,245 @@
+/* === ▼▼▼ 修正版 カラーパレットとスタイル ▼▼▼ === */
+:root {
+    --color-base-bg: #042940;     /* (1) 全体の背景 (ダークブルー) */
+    --color-container-bg: #005C53; /* (2) コンテナ背景 (ダークグリーン) */
+    --color-selected-bg: #8AAB2C;  /* (3) 選択アイテム (トーンダウンしたオリーブ) */
+    --color-selected-hover-bg: #9FC131; /* (選択済みホバー) */
+    --color-accent: #DBF227;      /* (4) アクセント (ライム) */
+    --color-text-primary: #D6D58E; /* (5) メインテキスト (ベージュ) */
+    --color-text-secondary: #9cb3a5; /* (中間色) */
+    --color-link: #DBF227;        /* (リンク色 = ライム) */
+}
+
+/* === 基本スタイルの適用 (スクロール対応) === */
+html {
+    height: 100%; /* スクロールコンテキストの基準 */
+}
+body {
+    background-color: var(--color-base-bg);
+    color: var(--color-text-primary);
+    min-height: 100%; /* 画面が小さくても最低100%確保 */
+    display: flex; /* flex をここで指定 */
+    flex-direction: column; /* flex-col をここで指定 */
+}
+header, 
+#action-pane-toggle, /* トグルバーの背景 */
+#action-pane-content, /* 展開後の背景 */
+#filter-pane,
+#post-pane-header { /* 中部ペインヘッダーの背景 */
+    background-color: var(--color-container-bg);
+    border-color: var(--color-base-bg);
+}
+
+/* === 下部ペインの入力欄の背景色統一 === */
+input, select, textarea,
+#account-filter-btn, /* <-- (変更) カンマを追加 */
+#sector-filter-btn,  /* <-- 【ここを追加】 */
+#result-display { /* 結果表示エリアも */
+    background-color: var(--color-base-bg) !important; /* ダークブルーで統一 */
+    color: var(--color-text-primary);
+    /* (変更) 枠線を明示的に指定 */
+    border: 1px solid var(--color-container-bg) !important;
+}
+
+/* === ヘッダー === */
+header { color: var(--color-accent); }
+header a { color: var(--color-accent); }
+
+/* === 選択状態 === */
+.post-item.selected {
+    background-color: var(--color-selected-bg);
+    border-color: var(--color-accent);
+    transform: scale(1.01);
+    color: #000000;
+}
+.post-item.selected .text-gray-400 { color: #333333; }
+.post-item.selected:hover {
+    background-color: var(--color-selected-hover-bg);
+    color: #000000;
+}
+.post-item.selected a,
+.post-item.selected .toggle-truncate-btn,
+.post-item.selected .post-text a {
+    color: #000000;
+    text-decoration: underline;
+}
+
+/* === リンクとボタン === */
+a, .toggle-truncate-btn, .text-blue-400, .text-blue-500 {
+    color: var(--color-link);
+}
+.bg-indigo-600 { background-color: var(--color-accent); color: #000; }
+.hover\:bg-indigo-700:hover { background-color: #c8e024; }
+.bg-blue-600 { background-color: var(--color-accent); color: #000; }
+.hover\:bg-blue-700:hover { background-color: #c8e024; }
+.bg-gray-600 { background-color: #D6D58E; color: #000; }
+.hover\:bg-gray-700:hover { background-color: #c3c283; }
+
+/* === ドロップダウンメニュー === */
+#account-filter-menu,
+#sector-filter-menu {
+        /* (変更) メイン背景色(ダークブルー)にしてコントラストをつける */
+        background-color: var(--color-base-bg); 
+        border-color: var(--color-container-bg); /* 枠線はコンテナ色に */
+}
+
+/* === レイアウト (スクロール対応) === */
+.layout-wrapper {
+    display: flex; 
+    flex-direction: column; 
+    flex-grow: 1; /* body の残りの高さを埋める */
+    min-height: 0; /* flexアイテム内のスクロールに重要 */        
+}
+#post-pane {
+    flex-basis: 0;
+    flex-grow: 1; /* 可能な限り高さを伸ばす */
+    overflow-y: auto; /* ここはスクロールさせる */
+    min-height: 0; /* flexアイテム内のスクロールに重要 */
+}
+
+/* === ペイン折りたたみ (共通スタイル) === */
+#action-pane-wrapper,
+#filter-pane-wrapper {
+    transition: height 0.3s ease-in-out;
+    overflow: visible;
+    flex-shrink: 0;
+}
+#filter-pane-wrapper {
+        z-index: 20; /* (★) post-pane-header(z-10)より手前に表示 */
+}
+#action-pane-wrapper {
+        z-index: 10; /* (★) 従来通り */
+}
+#action-pane-toggle,
+#filter-pane-toggle {
+    padding: 0.5rem 1rem;
+    cursor: pointer;
+    text-align: center;
+    font-weight: bold;
+    font-size: 0.875rem;
+    color: var(--color-accent);
+    background-color: var(--color-container-bg); 
+    border-top: 1px solid var(--color-base-bg);
+    border-bottom: 1px solid var(--color-base-bg);
+}
+#action-pane-toggle:hover,
+#filter-pane-toggle:hover {
+    background-color: var(--color-base-bg);
+}
+
+/* (★) アクションペインは既存のスタイルを維持 */
+#action-pane-content {
+    min-height: 200px; /* 下部ペインのみ最小高さ */
+    padding: 1rem;
+    border-top: 1px solid var(--color-base-bg);
+}
+
+#action-pane-wrapper.collapsed,
+#filter-pane-wrapper.collapsed {
+    height: 37px; /* トグルボタンの高さ */
+}
+
+#action-pane-wrapper.collapsed #action-pane-content,
+#filter-pane-wrapper.collapsed #filter-pane-content {
+    display: none;
+}
+
+/* (★) アイコン回転 (CSS制御) */
+.toggle-icon {
+        display: inline-block;
+        transition: transform 0.3s ease;
+        transform: rotate(0deg); /* 閉じた状態 (▼) */
+}
+#action-pane-wrapper:not(.collapsed) #action-pane-toggle .toggle-icon,
+#filter-pane-wrapper:not(.collapsed) #filter-pane-toggle .toggle-icon {
+        transform: rotate(180deg); /* 開いた状態 (▲) */
+}
+
+/* === ポスト本文 (改行表示とMoreボタン) === */
+.post-text { 
+    white-space: pre-wrap; /* 改行をそのまま表示 */
+    word-break: break-word; 
+}
+.post-text a { color: var(--color-link); text-decoration: underline; }
+.post-text.truncated { max-height: 4.5em; overflow: hidden; position: relative; }
+.post-text.truncated::after { 
+    content: ''; 
+    position: absolute; 
+    bottom: 0; right: 0; 
+    width: 70%; height: 1.5em; 
+    background: linear-gradient(to right, rgba(0, 92, 83, 0), var(--color-container-bg) 50%);
+}
+.toggle-truncate-btn { color: var(--color-accent); font-size: 0.75rem; font-weight: bold; cursor: pointer; }
+
+/* === ▼▼▼ 【修正】未選択ポストの背景色 ▼▼▼ === */
+.post-item {
+    background-color: #023436; /* ★ さらに暗いティールに変更 */
+    border-color: var(--color-base-bg);
+    transition: background-color 0.15s ease-in-out; /* ホバーアニメーションを追加 */
+}
+
+/* === ▼▼▼ 【修正】未選択ポストのホバー色 ▼▼▼ === */
+.post-item:not(.selected):hover {
+    background-color: var(--color-container-bg); /* ★ ダークグリーンに変更 (元のコンテナ色) */
+}
+
+/* === ▼▼▼ 【修正】未選択ポストのホバー色 ▼▼▼ === */
+.post-item:not(.selected):hover {
+    background-color: var(--color-container-bg); /* ★ ダークグリーンに変更 (元のコンテナ色) */
+}
+/* ▲▲▲ 修正ここまで ▲▲▲ */
+
+/* ▼▼▼【ここから追加】▼▼▼ */
+.post-username {
+    color: var(--color-accent); /* (4) アクセント (ライム) */
+}
+
+/* ▼▼▼【ここから追加】サジェスト機能のスタイル ▼▼▼ */
+.autocomplete-container {
+    position: relative; /* 候補リストの基準点 */
+}
+.autocomplete-suggestions {
+    position: absolute;
+    top: 100%; /* 入力欄の真下に表示 */
+    left: 0;
+    right: 0;
+    background-color: var(--color-base-bg); /* メイン背景色 */
+    border: 1px solid var(--color-container-bg);
+    border-top: none;
+    max-height: 200px;
+    overflow-y: auto;
+    z-index: 999; /* 最前面に表示 */
+}
+.autocomplete-suggestion {
+    padding: 0.5rem 0.75rem;
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 0.875rem; /* 14px */
+}
+.autocomplete-suggestion:hover,
+.autocomplete-suggestion.active {
+    background-color: var(--color-container-bg); /* ホバー色 */
+}
+/* ▼▼▼【ここから追加】ティッカータグのスタイル ▼▼▼ */
+.ticker-tag {
+    display: flex;
+    align-items: center;
+    background-color: var(--color-selected-bg); /* 選択色 */
+    color: #000; /* 暗い文字色 */
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.875rem; /* 14px */
+    font-weight: 500;
+    white-space: nowrap;
+}
+.ticker-tag-remove {
+    margin-left: 0.5rem;
+    cursor: pointer;
+    font-weight: bold;
+}
+.ticker-tag-remove:hover {
+    color: #db2727; /* 赤色 */
+}
+#filter-ticker-input {
+    min-width: 100px; /* 入力欄が小さくなりすぎないように */
+}

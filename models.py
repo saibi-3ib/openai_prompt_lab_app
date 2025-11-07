@@ -88,6 +88,9 @@ class CollectedPost(Base):
         secondary = analysis_posts_link,  # analysis_posts_linkテーブルを経由
         back_populates = "posts" # AnalysisResult側の"posts"と相互参照
     )
+    # (★) TickerSentimentとのリレーションシップ
+    ticker_sentiments = relationship("TickerSentiment", back_populates="collected_post")
+
 # --- テーブル: アプリケーション設定保存用 ---
 class Setting(Base):
     """アプリケーション全体の設定を保存するテーブル (キーと値のペア)"""
@@ -133,18 +136,22 @@ class AnalysisResult(Base):
     # ▼▼▼【ここから追加】コストとモデルのカラム ▼▼▼
     # 使用したAIモデル (例: gpt-4o-mini, gpt-3.5-turbo)
     ai_model = Column(String, nullable=True)
-    
     # 消費したクレジットの概算コスト (USD)
     cost_usd = Column(Float, nullable=True)
-
     # 使用したトークン数 (入力)
     input_tokens = Column(Integer, nullable=True) 
-    
     # 使用したトークン数 (出力)
     output_tokens = Column(Integer, nullable=True) 
 
     # AIが抽出した銘柄コード (例: "AAPL,TSLA,MSFT")
     extracted_tickers = Column(String, nullable=True, index=True) 
+
+    # (子) このバッチ分析に含まれる個別のセンチメント結果
+    sentiments = relationship(
+        "TickerSentiment", 
+        back_populates="analysis_result",
+        order_by="TickerSentiment.collected_post_id" # (★) groupby のためにソート順を追加
+    )
 
 class StockTickerMap(Base):
     """S&P500などの銘柄と企業名、エイリアス（愛称）の変換表"""
@@ -174,10 +181,9 @@ class TickerSentiment(Base):
     sentiment = Column(String(10), nullable=False) # "Positive", "Negative", "Neutral"
     reasoning = Column(Text, nullable=True) # AIによる判断根拠
     
-    # リレーションシップ (任意)
-    # analysis_result = relationship("AnalysisResult")
-    # collected_post = relationship("CollectedPost")
-    # stock_ticker = relationship("StockTickerMap")
+    # (親) このセンチメント結果が属するバッチ分析
+    analysis_result = relationship("AnalysisResult", back_populates="sentiments")
+    collected_post = relationship("CollectedPost", back_populates="ticker_sentiments")
 
 class UserTickerWeight(Base):
     """

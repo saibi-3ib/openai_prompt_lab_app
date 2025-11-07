@@ -611,7 +611,9 @@ def history():
     try:
         results = db.query(AnalysisResult).options(
             joinedload(AnalysisResult.prompt),
-            joinedload(AnalysisResult.posts)
+            joinedload(AnalysisResult.posts),
+            # (★) TickerSentiment と、それに関連する投稿(本文)も読み込む
+            joinedload(AnalysisResult.sentiments).joinedload(TickerSentiment.collected_post)
         ).order_by(AnalysisResult.analyzed_at.desc()).all()
         
         return render_template("history.html", results=results)
