@@ -135,6 +135,19 @@ def manage():
                     if prompt:
                         prompt.template_text = prompt_text
                         db.commit()
+
+            # 2.1: デフォルトとして使用するプロンプトを選択して保存する処理
+            elif action == 'set_default_prompt':
+                selected_prompt_name = request.form.get('selected_prompt')
+                if selected_prompt_name:
+                    setting = db.query(Setting).filter(Setting.key == 'default_prompt_name').first()
+                    if setting:
+                        setting.value = selected_prompt_name
+                    else:
+                        new_setting = Setting(key='default_prompt_name', value=selected_prompt_name)
+                        db.add(new_setting)
+                    db.commit()
+                    flash(f"プロンプト '{selected_prompt_name}' をデフォルトに設定しました。", 'success')
             
             # 3. クレジット残高の設定処理
             elif action == 'save_credit':
@@ -229,14 +242,18 @@ def manage():
         # GET処理: ページ表示
         current_provider = get_current_provider(db)
         current_prompt = get_current_prompt(db)
-        credit_setting = get_or_create_credit_setting(db)
-        current_credit = float(credit_setting.value)
+
+        # 全保存済みプロンプトを取得してテンプレートに渡す（UI のセレクト用）
+        prompts = db.query(Prompt).order_by(Prompt.name).all()
+        current_credit = float(get_or_create_credit_setting(db).value)
         
         return render_template(
-            "manage.html", 
-            current_provider=current_provider, 
+            "manage.html",
+            current_provider=current_provider,
             default_prompt=current_prompt.template_text,
             current_credit=current_credit,
+            prompts=prompts,
+            current_prompt_name=current_prompt.name
         )
     finally:
         db.close()

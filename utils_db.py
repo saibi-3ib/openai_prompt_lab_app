@@ -73,23 +73,45 @@ def get_current_provider(db: Session) -> str:
     return setting.value if setting else 'X'
 
 def get_current_prompt(db: Session) -> Prompt:
-    """DBからデフォルトのプロンプトを取得する。なければ初期値を作成する。"""
-    prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
+    """DB から現在選択されているプロンプトを返す。
+    優先順位:
+    1) Setting.key == 'default_prompt_name' の値（Prompt.name）
+    2) DEFAULT_PROMPT_KEY（既存のフォールバック）
+    3) 存在しなければ DEFAULT_PROMPT_KEY 名で新規作成して返す
+    """
+    # 1) 設定に default_prompt_name があるか確認
+    default_setting = db.query(Setting).filter(Setting.key == 'default_prompt_name').first()
+    prompt = None
+    if default_setting and default_setting.value:
+        prompt = db.query(Prompt).filter(Prompt.name == default_setting.value).first()
+
+    # 2) 設定がなければ、従来の DEFAULT_PROMPT_KEY を使う
+    if not prompt:
+        prompt = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
+
+    # 3) それでもなければ従来どおり初期プロンプトを作成して返す
     if not prompt:
         default_text = """
-        以下の英語の文章を日本語に翻訳し、投資家向けの視点で最も重要なポイントを1つの短い文で要約してください。
-        結果は必ず以下のJSON形式で返してください。
-        {{
-          "translation": "ここに翻訳結果",
-          "summary": "ここに要約結果"
-        }}
-        原文:
-        {text}
-        """
+                        You are a data-extraction engine. Given the text block(s) in {texts} and the ticker context in {ticker_context}, output exactly one JSON object (no extra text) with this schema:
+
+                        {
+                        "overall_summary": "<短く投資家向けの概要（日本語）>",
+                        "detailed_analysis": [
+                            {
+                            "post_db_id": <整数: POST_DB_ID from the provided texts>,
+                            "ticker_sentiments": [
+                                { "ticker": "<ティッカー記号>", "sentiment": "Positive"|"Negative"|"Neutral", "reason": "<短い理由（日本語）>" }
+                            ]
+                            }
+                        ]
+                        }
+                        """
         new_prompt = Prompt(name=DEFAULT_PROMPT_KEY, template_text=default_text, is_default=True)
         db.add(new_prompt)
-        db.commit() # (初回作成時のみ例外的にコミット)
-        return new_prompt
+        db.commit()
+        db.refresh(new_prompt)
+        prompt = new_prompt
+
     return prompt
 
 # --- (リファクタリング) 一括分析のビジネスロジック ---

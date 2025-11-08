@@ -77,20 +77,34 @@
             </form>
         </div>
 
-        <div class="bg-gray-800 rounded-lg shadow-xl p-6 border border-gray-700">
-            <h2 class="text-xl font-semibold mb-4 text-green-400">AI要約プロンプト編集</h2>
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
+            <h2 class="text-xl font-semibold mb-4 text-cyan-400">使用するプロンプトを選択</h2>
             <p class="text-gray-400 mb-4 text-sm">
-                投稿内容の要約に使用するプロンプトを編集します。**{text}** の部分は、Workerが収集した元のテキストに置き換えられます。
+                保存済みのプロンプト一覧から、Worker が実行時に使うプロンプトを選択します。選択は即時反映されます。
             </p>
             <form method="POST" class="space-y-4">
-                <textarea name="prompt_text" rows="10" 
-                          class="w-full p-3 bg-gray-900 border border-gray-700 rounded text-gray-300 focus:ring-green-500 focus:border-green-500" 
-                          required>{{ default_prompt }}</textarea>
-                <button type="submit" name="action" value="save_prompt" class="bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-4 rounded transition duration-200">
-                    プロンプトを保存
+                <div class="space-y-2">
+                    <label for="selected-prompt" class="block text-gray-400">プロンプト一覧</label>
+                    <select id="selected-prompt" name="selected_prompt" class="w-full p-2 bg-gray-900 border border-gray-700 rounded text-white">
+                        {% for p in prompts %}
+                            <option value="{{ p.name }}" {% if p.name == current_prompt_name %}selected{% endif %}>
+                                {{ p.name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <button type="submit" name="action" value="set_default_prompt" class="bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-2 px-4 rounded">
+                    このプロンプトを Worker のデフォルトに設定
                 </button>
+
+                <!-- 選択したプロンプトの簡易プレビュー（サーバ側で渡した default_prompt を表示） -->
+                <div class="mt-4">
+                    <label class="block text-gray-400 mb-2">選択中のプロンプト（プレビュー）</label>
+                    <pre class="whitespace-pre-wrap p-3 bg-gray-900 border border-gray-700 rounded text-sm text-gray-200">{{ default_prompt[:1000] }}</pre>
+                </div>
             </form>
         </div>
+        
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
             <h2 class="text-xl font-semibold mb-4 text-purple-400">生データ一括インポート</h2>
             <p class="text-gray-400 mb-4 text-sm">
