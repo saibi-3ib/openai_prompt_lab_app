@@ -44,6 +44,7 @@ class TargetAccount(Base):
     __tablename__ = "target_accounts"
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
+    provider = Column(String(20), nullable=False, default='X', index=True) # (★) 'X' or 'Threads'
     is_active = Column(Boolean, default=True, nullable=False)
     added_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 

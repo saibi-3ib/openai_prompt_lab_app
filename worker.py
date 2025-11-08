@@ -1,122 +1,125 @@
 import os
 import json
 from dotenv import load_dotenv
-import tweepy
-# import openai ## OPENAI APIはwebappで制御する仕様に変更するため削除
-from models import SessionLocal, CollectedPost, Setting
+# import tweepy # (★) tweepy は使わない
+from models import SessionLocal, CollectedPost, Setting, StockTickerMap, Prompt, TargetAccount
 from datetime import datetime, timezone
 from dateutil.parser import parse
 import time
 import requests
 from sqlalchemy.exc import IntegrityError
 
-# .envファイルから環境変数を読み込む
+# ▼▼▼【インポート追加】OAuth 1.1a のため ▼▼▼
+from requests_oauthlib import OAuth1Session
+# ▲▲▲【インポート追加】▲▲▲
+
+from utils_db import _run_analysis_logic, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY
+
 load_dotenv()
 
 # APIキーと設定の読み込み
-X_BEARER_TOKEN = os.environ.get("X_BEARER_TOKEN")
-
-# OPENAI APIはwebappで制御する仕様に変更するため削除
-# OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY") 
+X_API_KEY = os.environ.get("X_API_KEY")
+X_API_KEY_SECRET = os.environ.get("X_API_KEY_SECRET")
+X_ACCESS_TOKEN = os.environ.get("X_ACCESS_TOKEN")
+X_ACCESS_TOKEN_SECRET = os.environ.get("X_ACCESS_TOKEN_SECRET")
 
 THREADS_ACCESS_TOKEN = os.environ.get("THREADS_USER_ACCESS_TOKEN")
 THREADS_USER_ID = os.environ.get("THREADS_USER_ID")
 THREADS_API_BASE_URL = "https://graph.threads.net/v1.0"
 
-# 環境変数からの設定値の読み込みとデフォルト値の設定
 try:
     SLEEP_TIME_SECONDS_BETWEEN_POSTS = int(os.environ.get("SLEEP_TIME_SECONDS_BETWEEN_POSTS", "2"))
     SLEEP_TIME_SECONDS_BETWEEN_USER = int(os.environ.get("SLEEP_TIME_SECONDS_BETWEEN_USER", "15"))
 except ValueError:
-    # もし環境変数が整数に変換できない場合、デフォルト値を使用
     print ("Invalid SLEEP_TIME_SECONDS_BETWEEN_USER value. Using default of 15 seconds.")
     SLEEP_TIME_SECONDS_BETWEEN_POSTS = 2
     SLEEP_TIME_SECONDS_BETWEEN_USER = 15
 
-# X or Threadsが選択された後のタイミングに処理を移動
-# if not all([X_BEARER_TOKEN, OPENAI_API_KEY, TARGET_X_USERNAMES_STR]):
-#     raise ValueError("必要な環境変数が.envに設定されていません。")
 
-# 監視対象のユーザー名をリストに変換
-TARGET_USERNAMES_STR = os.environ.get("TARGET_USERNAMES")
-TARGET_USERNAMES = [username.strip() for username in TARGET_USERNAMES_STR.split(",")]
+# ▼▼▼【ここから変更】tweepy.Client の代わりに OAuth1Session を使う ▼▼▼
 
-# X or Threadsが選択された後のタイミングに処理を移動
-# # APIクライアントの初期化
-# client_x = tweepy.Client(X_BEARER_TOKEN)
-# client_openai = openai.OpenAI(api_key=OPENAI_API_KEY)
+def _make_oauth1_session():
+    """OAuth1.1aセッションを .env キーから作成する"""
+    consumer_key = X_API_KEY.strip() if X_API_KEY else None
+    consumer_secret = X_API_KEY_SECRET.strip() if X_API_KEY_SECRET else None
+    access_token = X_ACCESS_TOKEN.strip() if X_ACCESS_TOKEN else None
+    access_secret = X_ACCESS_TOKEN_SECRET.strip() if X_ACCESS_TOKEN_SECRET else None
 
-def get_latest_posts_from_x(client_x, username, since_id=None):
+    if not all([consumer_key, consumer_secret, access_token, access_secret]):
+        return None
+    return OAuth1Session(client_key=consumer_key,
+                         client_secret=consumer_secret,
+                         resource_owner_key=access_token,
+                         resource_owner_secret=access_secret)
+
+def get_latest_posts_from_x(oauth_session, username, since_id=None):
     """
-    指定されたXユーザー名から最新の投稿を取得する。
-    since_idが指定された場合、それ以降の投稿のみを取得する。
+    指定されたXユーザー名から最新の投稿を取得する (requests_oauthlib を使用)
     """
-    if not client_x:
-        print("Error: X API client is not initialized.")
+    if not oauth_session:
+        print("Error: OAuth1Session is not initialized.")
         return False, None
 
     try:
-        user = client_x.get_user(username=username).data
-        if not user:
-            print(f"Error: User {username} not found.")
+        # 1. ユーザー名からユーザーIDを取得
+        url_user = f"https://api.twitter.com/2/users/by/username/{username}"
+        r_user = oauth_session.get(url_user)
+        r_user.raise_for_status()
+        user_json = r_user.json()
+        user_id = user_json.get("data", {}).get("id")
+        
+        if not user_id:
+            print(f"Error: User {username} not found via v2 API.")
             return False, None
         
-        # APIにわたすパラメータを動的に設定
+        # 2. ユーザーIDからツイートを取得
+        url_tweets = f"https://api.twitter.com/2/users/{user_id}/tweets"
         params = {
-            "id": user.id,
-            "exclude": ["replies", "retweets"],
+            "exclude": "replies,retweets",
             "max_results": 100,
-            "tweet_fields": ["created_at", "public_metrics"]
+            "tweet.fields": "created_at,public_metrics"
         } 
         if since_id:
             params["since_id"] = since_id
         else:
-            # since_idがない場合は最新10件のみ取得
-            params["max_results"] = 10
+            params["max_results"] = 10 # (★) 初回取得は10件
         
-        response = client_x.get_users_tweets(**params)
-        return True, response.data if response.data else []
+        r_tweets = oauth_session.get(url_tweets, params=params)
+        r_tweets.raise_for_status()
+        tweets_json = r_tweets.json()
+        
+        return True, tweets_json.get("data", [])
+        
     except Exception as e:
-        print(f"Error fetching posts for {username}: {e}")
+        print(f"Error fetching posts for {username} via OAuth1Session: {e}")
         return False, None
 
+# (★) search_recent_posts_from_user 関数は不要なので削除
+# def search_recent_posts_from_user(...):
+
+# (★) get_latest_posts_from_threads 関数は変更なし
 def get_latest_posts_from_threads(user_id, since_timestamp=None):
-    """
-    指定されたThreadsユーザーIDから最新の投稿を取得する。
-    since_timestampが指定された場合、それ以降の投稿のみを取得する。
-    """
-    
+    # ... (Threads のコードはそのまま) ...
     if not THREADS_ACCESS_TOKEN:
         print("Error: THREADS_ACCESS_TOKEN is not set.")
         return False, None
     
     endpoint = f"{THREADS_API_BASE_URL}/{user_id}/threads"
-
-    # APIにわたすパラメータを動的に設定
     params = {
         "access_token": THREADS_ACCESS_TOKEN,
-        # 取得したいフィールドを指定
         "fields": "id,text,timestamp,permalink,like_count,reshare_count",
-        "limit": 25 # 一度に取得するスレッドの数(APIの推奨値)
+        "limit": 25
     }
         
     try:
-        # GETリクエストを送信
         response = requests.get(endpoint, params=params)
-        response.raise_for_status()  # HTTPエラーが発生した場合に例外をスロー
-
-        response_json = response.json()
-
-        # レスポンスのJSONから'data'キーの値を取得        
-        raw_posts = response_json.get("data", [])
-
+        response.raise_for_status()
+        raw_posts = response.json().get("data", [])
         print(f"Fetched {len(raw_posts)} threads for user ID {user_id}.")
 
-        # since_timestampが指定されている場合、フィルタリングを行う
         if since_timestamp:
             filter_dt = datetime.fromtimestamp(since_timestamp, tz=timezone.utc)
             filtered_posts = []
-
             for post in raw_posts:
                 post_timestamp_str = post.get("timestamp")
                 if post_timestamp_str:
@@ -125,74 +128,101 @@ def get_latest_posts_from_threads(user_id, since_timestamp=None):
                         if post_dt > filter_dt:
                             filtered_posts.append(post)
                     except ValueError:
-                        print(f"Warning: Invalid timestamp format in post ID {post.get('id','N/A')}: {post_timestamp_str}, Skipping time filter for this post.")
+                        print(f"Warning: Invalid timestamp format in post ID {post.get('id','N/A')}: {post_timestamp_str}")
             print(f"Filtered {len(raw_posts) - len(filtered_posts)} posts older than since_timestamp.")
-
-            # フィルタリング後の投稿を返す
             return True, filtered_posts
-
-        # since_timestampがない場合は全件返す
+        
         return True, raw_posts
     
     except requests.exceptions.RequestException as e:
         print(f"Error fetching threads for user ID {user_id}: {e}")
-
-        # レスポンス内容を表示（デバッグ用）
         if hasattr(e, 'response') and e.response is not None:
             print(f"Response status code: {e.response.status_code}")
             try:
-                error_json = e.response.json()
-
-                error_msg = error_json.get('error', {}).get('message', 'No error message in response.')   
-                error_code = error_json.get('error', {}).get('code', 'No error code in response.')
-         
-                print(f"Response Error code: {error_code}, message: {error_msg}")
-                print(f"Response content: {error_json}")
-
+                print(f"Response content: {e.response.json()}")
             except json.JSONDecodeError:
-                print(f"Response content is not valid JSON:")
-                print(e.response.text)
+                print(f"Response content: {e.response.text}")
         return False, None
+# ▲▲▲【変更ここまで】▲▲▲
 
 def run_worker():
     db = SessionLocal()
     try:
         # DBからAPI選択設定を取得
         api_provider_setting = db.query(Setting).filter(Setting.key == "api_provider").first()
-        API_PROVIER = api_provider_setting.value if api_provider_setting else "X"  # デフォルトは"X"
+        API_PROVIER = api_provider_setting.value if api_provider_setting else "X"
 
         print(f"worker sttarted at {datetime.now(timezone.utc).isoformat()} (Provider: {API_PROVIER})")
+
+        # --- AI分析の準備 (変更なし) ---
+        run_ai_analysis = True 
+        if not client_openai:
+            print("OpenAI API Key not configured. Worker can only collect posts, not analyze them.")
+            run_ai_analysis = False
+        else:
+            try:
+                ticker_maps = db.query(StockTickerMap).all()
+                default_prompt_obj = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
+                if not default_prompt_obj:
+                     raise Exception(f"'{DEFAULT_PROMPT_KEY}' プロンプトがDBに存在しません。")
+                
+                default_prompt_text = default_prompt_obj.template_text
+                ai_model_to_use = "gpt-4o-mini" 
+                if ai_model_to_use not in AVAILABLE_MODELS:
+                    ai_model_to_use = AVAILABLE_MODELS[0]
+                
+                print(f"AI Analysis is READY. Using model: {ai_model_to_use}")
+                run_ai_analysis = True
+
+            except Exception as e:
+                print(f"AI分析の準備に失敗しました: {e}")
+                print("Workerは分析を実行せず、投稿収集のみ行います。")
+                run_ai_analysis = False
+
 
         target_list = []
         fetch_function = None
         get_since_value = lambda last_post: None
         provider_username_map = {}
-        client_x = None # ここで初期化しておく
+        
+        # ▼▼▼【ここから変更】tweepy.Client の代わりに OAuth1Session を使う ▼▼▼
+        oauth_session = None # (★) client_x の代わりに oauth_session
 
-        # APIプロバイダーに応じた設定
         if API_PROVIER == "X":
-            # client_xをここで初期化
-            client_x = tweepy.Client(X_BEARER_TOKEN) if X_BEARER_TOKEN else None
-
-            if not client_x or not TARGET_USERNAMES:
-                print("X API client or target usernames not properly configured. Skipping X")
+            oauth_session = _make_oauth1_session() # (★) ヘルパー関数を呼び出す
+            
+            if not oauth_session:
+                print("X API OAuth 1.1a keys not fully configured in .env. Skipping X.")
                 return
-            target_list = TARGET_USERNAMES
-            fetch_function = get_latest_posts_from_x
+
+            # (★) DBから監視対象アカウントを取得 (provider='X' で絞り込む)
+            active_accounts = db.query(TargetAccount).filter(
+                TargetAccount.is_active == True,
+                TargetAccount.provider == API_PROVIER
+            ).all()
+            target_list = [acc.username for acc in active_accounts]
+            
+            if not target_list:
+                print("X API target accounts (in DB) not properly configured. Skipping X")
+                return
+            
+            fetch_function = get_latest_posts_from_x # (★) 変更後の関数名
             get_since_value = lambda last_post: last_post.post_id if last_post else None
-            provider_username_map = {username: username for username in TARGET_USERNAMES}
+            provider_username_map = {username: username for username in target_list}
         
         elif API_PROVIER == "Threads":
+            # (★) Threads のロジックは変更なし
             if not THREADS_ACCESS_TOKEN or not THREADS_USER_ID:
                 print("Threads API client or user ID not properly configured. Skipping Threads")
                 return
             target_list = [THREADS_USER_ID]
             fetch_function = get_latest_posts_from_threads
             get_since_value = lambda last_post: int(last_post.posted_at.timestamp()) if last_post else None
-            provider_username_map = {THREADS_USER_ID: "my_threads_account"}  # 任意の名前に変更可能
+            provider_username_map = {THREADS_USER_ID: "my_threads_account"}
         else:
             raise ValueError(f"Invalid API_PROVIER setting in database: {API_PROVIER}")
 
+        # --- ユーザーごとのループ ---
         for target in target_list:
             username_to_process = provider_username_map.get(target)
             print(f"---- Processing user: {target} (as user: {username_to_process}) ----")
@@ -201,62 +231,86 @@ def run_worker():
             since_value = get_since_value(latest_post_in_db)
 
             if API_PROVIER == "X":
-                success, raw_posts = fetch_function(client_x, target, since_id=since_value)
+                success, raw_posts = fetch_function(oauth_session, target, since_id=since_value) # (★) client_x -> oauth_session
             elif API_PROVIER == "Threads":
                 success, raw_posts = fetch_function(target, since_value)
 
             if not success:
                 print(f"Failed to fetch posts for user: {target}. Skipping.")
-            elif not raw_posts:
+                continue
+            if not raw_posts:
                 print(f"No new posts found for user: {target}.")
-            else:
-                print(f"Fetched {len(raw_posts)} new posts for user: {target}.")
-                for raw_post in reversed(raw_posts): #古い順に処理
-                    normalized_data = normalize_post_data(raw_post, API_PROVIER, username=username_to_process if API_PROVIER == "X" else None)
-                    if not normalized_data:
-                        print(f"Failed to normalize post data. Skipping.")
-                        continue
+                continue
+                
+            print(f"Fetched {len(raw_posts)} new posts for user: {target}.")
+            
+            # --- 投稿ごとのループ (古い順) ---
+            for raw_post in reversed(raw_posts):
+                normalized_data = normalize_post_data(raw_post, API_PROVIER, username=username_to_process if API_PROVIER == "X" else None)
+                if not normalized_data:
+                    print(f"Failed to normalize post data. Skipping.")
+                    continue
+                    
+                post_id_to_print = normalized_data.get("post_id", "N/A")
+                post_text_preview = normalized_data.get("text", "")[:30]
+                print(f"Processing new post: {post_id_to_print} - {post_text_preview}...")
+
+                new_collected_post = CollectedPost(
+                    username=normalized_data["username"],
+                    post_id=normalized_data["post_id"],
+                    original_text=normalized_data["text"],
+                    ai_summary=None,
+                    link_summary=None,
+                    source_url=normalized_data["source_url"],
+                    posted_at=normalized_data["posted_at"],
+                    like_count=normalized_data["like_count"],
+                    retweet_count=normalized_data["retweet_count"]
+                )
+
+                try:
+                    # (★) 1. 投稿をセッションに追加 (まだコミットしない)
+                    db.add(new_collected_post)
+                    db.flush() # (★) IDを取得するために flush
+                    print(f"Staged post {normalized_data['post_id']} (DB ID: {new_collected_post.id})")
+
+                    # --- AI分析の呼び出し (変更なし) ---
+                    if run_ai_analysis: 
+                        try:
+                            print(f" -> Running AI analysis for DB ID: {new_collected_post.id}...")
+                            
+                            ai_result = _run_analysis_logic(
+                                db=db,
+                                posts_to_analyze=[new_collected_post],
+                                prompt_text=default_prompt_text,
+                                selected_model=ai_model_to_use,
+                                selected_prompt_name=DEFAULT_PROMPT_KEY,
+                                ticker_context_map=ticker_maps
+                            )
+                            print(f" -> AI analysis COMPLETED (Cost: ${ai_result.get('cost_usd', 0):.6f})")
                         
-                    post_id_to_print = normalized_data.get("post_id", "N/A")
-                    post_text_preview = normalized_data.get("text", "")[:30]
-                    print(f"Processing new post: {post_id_to_print} - {post_text_preview}...")
+                        except Exception as ai_e:
+                            print(f"!!!!!!!! AI analysis FAILED for DB ID {new_collected_post.id}: {ai_e} !!!!!!!!")
+                    # --- AI分析ここまで ---
 
-                    new_collected_post = CollectedPost(
-                        username=normalized_data["username"],
-                        post_id=normalized_data["post_id"],
-                        original_text=normalized_data["text"],
-                        # ai_summaryは常にNoneで保存。webappで後処理する仕様に変更
-                        ai_summary=None,
-                        link_summary=None,
-                        source_url=normalized_data["source_url"],
-                        posted_at=normalized_data["posted_at"],
-                        like_count=normalized_data["like_count"],
-                        retweet_count=normalized_data["retweet_count"]
-                    )
+                    # (★) 3. トランザクションをコミット
+                    db.commit()
+                    print(f"Saved post {normalized_data['post_id']} to database.")
 
-                    try:
-                        db.add(new_collected_post)
-                        db.commit()
-                        print(f"Saved post {normalized_data['post_id']} to database.")
-                    except IntegrityError as e:
-                        db.rollback()
-                        # drevier-specificな一意制約違反エラーをキャッチ
-                        if e.orig and "duplicate key value violates unique constraint" in str(e.orig):
-                            print(f"Saved Post {normalized_data['post_id']} already exists in the database. Skipping.")
-                        else:
-                            # その他のIntegrityErrorは再度例外をスロー
-                            print(f"An error occurred while saving post {normalized_data['post_id']}: {e}")
-                    except Exception as e: # その他の予期せぬエラー処理
-                        db.rollback()
-                        print(f"An unexpected error occurred while saving post {normalized_data['post_id']}: {e}")
+                except IntegrityError as e:
+                    db.rollback()
+                    if e.orig and "duplicate key value violates unique constraint" in str(e.orig):
+                        print(f"Saved Post {normalized_data['post_id']} already exists. Skipping.")
+                    else:
+                        print(f"An error occurred while saving post {normalized_data['post_id']}: {e}")
+                except Exception as e:
+                    db.rollback()
+                    print(f"An unexpected error occurred while saving post {normalized_data['post_id']}: {e}")
 
-                    # 投稿間で少し待つ（API制限回避のため）
-                    print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_POSTS} seconds before next post...")
-                    time.sleep(SLEEP_TIME_SECONDS_BETWEEN_POSTS)
+                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_POSTS} seconds before next post...")
+                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_POSTS)
 
-                # ユーザー間で少し待つ（API制限回避のため）
-                print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
-                time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
+            print(f"Waiting {SLEEP_TIME_SECONDS_BETWEEN_USER} seconds before next user...")
+            time.sleep(SLEEP_TIME_SECONDS_BETWEEN_USER)
 
     except Exception as e:
         print(f"An error occurred during the DB operation: {e}")
@@ -268,27 +322,28 @@ def run_worker():
 def normalize_post_data(raw_post, provider, username=None):
     """
     生の投稿データを正規化して共通のフォーマットに変換する。
-    providerは"X"または"Threads"。
-    usernameはXの場合に指定。
     """
     try:
-        if provider == "X": # Xの場合usernameは必須
+        if provider == "X":
             if not username:
                 raise ValueError("Username is required for X provider.")
             
-            # public_metricsが存在しない場合に備える
-            metrics = getattr(raw_post, "public_metrics", {})
+            # ▼▼▼【変更】tweepy オブジェクトではなく、辞書(json)としてアクセス ▼▼▼
+            metrics = raw_post.get("public_metrics", {})
+            post_id = str(raw_post.get("id"))
             return {
                 "username": username,
-                "post_id": str(raw_post.id),
-                "text": raw_post.text,
-                "source_url": f"https://x.com/{username}/status/{raw_post.id}",
-                "posted_at": raw_post.created_at,
+                "post_id": post_id,
+                "text": raw_post.get("text"),
+                "source_url": f"https://x.com/{username}/status/{post_id}",
+                "posted_at": parse(raw_post.get("created_at")), # (★) parse() を追加
                 "like_count": metrics.get("like_count", 0),
                 "retweet_count": metrics.get("retweet_count", 0)
                 }
+            # ▲▲▲【変更ここまで】▲▲▲
+            
         elif provider == "Threads":
-            # ThreadsではusernameはDB保存時に固定値を使用
+            # (★) Threads のロジックは変更なし
             username_for_db = "my_threads_account"
             post_id = raw_post.get("id")
             if not post_id:
@@ -296,7 +351,7 @@ def normalize_post_data(raw_post, provider, username=None):
         
             posted_at_str = raw_post.get("timestamp")
             posted_at_dt = parse(posted_at_str) if posted_at_str else None
-            if not posted_at_dt: # 投稿日時が無いデータは処理しない
+            if not posted_at_dt:
                 raise ValueError("Timestamp is missing in Threads data.")
             
             return {
@@ -306,15 +361,13 @@ def normalize_post_data(raw_post, provider, username=None):
                 "source_url": raw_post.get("permalink", ""),
                 "posted_at": posted_at_dt,
                 "like_count": raw_post.get("like_count", 0),
-                "retweet_count": raw_post.get("reshare_count", 0) # Threadsではリシェア数をretweet_countとして扱う
+                "retweet_count": raw_post.get("reshare_count", 0)
             }
     except Exception as e:
-        # データ構造が予期せぬ形式の場合に備える
-        post_id_for_log = getattr(raw_post, "id", raw_post.get("id", "N/A"))
+        post_id_for_log = raw_post.get("id", "N/A")
         print(f"Error normalizing post data (Post ID: {post_id_for_log}): {e}")
-        return None # 正規化に失敗した場合はNoneを返し、呼び出し元でスキップさせる
+        return None
     
-    #ここに到達した場合も異常なのでNoneを返す
     return None
 
 if __name__ == "__main__":
