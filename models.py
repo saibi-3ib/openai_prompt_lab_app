@@ -47,6 +47,17 @@ class TargetAccount(Base):
     provider = Column(String(20), nullable=False, default='X', index=True) # (★) 'X' or 'Threads'
     is_active = Column(Boolean, default=True, nullable=False)
     added_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    
+    # (子)このアカウントに関連するすべての重み付け
+    weights = relationship("UserTickerWeight", back_populates="account")
+
+    # (子) このアカウントに関連する投稿
+    posts = relationship(
+        "CollectedPost",
+        back_populates="target_account",
+        lazy="dynamic", # (★) .count() のために dynamic を維持
+        order_by="CollectedPost.posted_at.desc()" # (★) ソート順を維持
+    )
 
 # --- テーブル: AIプロンプト ---
 class Prompt(Base):
@@ -70,14 +81,13 @@ class CollectedPost(Base):
     """Workerが収集した生のポスト情報を保存するテーブル"""
     __tablename__ = "collected_posts"
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, index=True, nullable=False)
+    username = Column(String, ForeignKey('target_accounts.username'), index=True, nullable=False)
     post_id = Column(String, unique=True, index=True, nullable=False)
     original_text = Column(Text, nullable=False)
     source_url = Column(String, nullable=False)
     posted_at = Column(DateTime, nullable=False)
     like_count = Column(Integer, default=0)
     retweet_count = Column(Integer, default=0)
-    # --- 変更点 ---
     # AI要約はオンデマンドになったので、デフォルトは空(NULL)にする
     ai_summary = Column(Text, nullable=True) 
     # リンク先の要約を保存する新しい列
@@ -89,8 +99,13 @@ class CollectedPost(Base):
         secondary = analysis_posts_link,  # analysis_posts_linkテーブルを経由
         back_populates = "posts" # AnalysisResult側の"posts"と相互参照
     )
-    # (★) TickerSentimentとのリレーションシップ
+    # TickerSentimentとのリレーションシップ
     ticker_sentiments = relationship("TickerSentiment", back_populates="collected_post")
+    # usernameでTargetAccountと紐づけ
+    target_account = relationship(
+        "TargetAccount",
+        back_populates="posts"
+    )
 
 # --- テーブル: アプリケーション設定保存用 ---
 class Setting(Base):
@@ -208,5 +223,8 @@ class UserTickerWeight(Base):
     weight_ratio = Column(Float, nullable=False, default=0.0, index=True)
     
     last_analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    # (親) この重み付けが属するアカウント
+    account = relationship("TargetAccount", back_populates="weights")
 
     __table_args__ = (UniqueConstraint('account_id', 'ticker', name='_account_ticker_uc'),)

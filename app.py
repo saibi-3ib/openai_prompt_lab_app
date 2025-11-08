@@ -3,7 +3,7 @@ import json
 import requests 
 from flask import Flask, render_template, request, redirect, url_for, jsonify, flash, get_flashed_messages
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import joinedload, selectinload, subqueryload
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -12,7 +12,10 @@ import io
 from dotenv import load_dotenv
 
 # --- (変更) モデル定義とDB接続を models から持ってくる ---
-from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, User, TickerSentiment, StockTickerMap
+from models import (
+    SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, User, 
+    TickerSentiment, StockTickerMap, TargetAccount, UserTickerWeight
+)
 from datetime import datetime, timezone
 
 # --- ▼▼▼【新規】ロジックのインポート ▼▼▼ ---
@@ -665,6 +668,89 @@ def logout():
     flash('ログアウトしました。', 'info')
     return redirect(url_for('login')) # ログアウト後はログインページへ
 # --- ▲▲▲【ログイン/ログアウト ルートここまで】▲▲▲ ---
+
+# --- ▼▼▼【ここから追加】アカウント管理ページ ▼▼▼ ---
+@app.route('/accounts', methods=['GET', 'POST'])
+@login_required
+def accounts():
+    db = SessionLocal()
+    try:
+        # --- POSTリクエスト処理 (アカウントの追加・削除・トグル) ---
+        if request.method == 'POST':
+            action = request.form.get('action')
+            
+            # (1) アカウントの新規追加
+            if action == 'add_account':
+                username = request.form.get('username')
+                provider = request.form.get('provider', 'X') # デフォルトは 'X'
+                if not username:
+                    flash('アカウント名を入力してください。', 'error')
+                else:
+                    existing = db.query(TargetAccount).filter(TargetAccount.username == username).first()
+                    if existing:
+                        flash(f"アカウント '{username}' は既に存在します。", 'warning')
+                    else:
+                        new_account = TargetAccount(
+                            username=username,
+                            provider=provider,
+                            is_active=True # (★) 追加時はデフォルトで有効
+                        )
+                        db.add(new_account)
+                        db.commit()
+                        flash(f"アカウント '{username}' ({provider}) を追加しました。", 'success')
+
+            # (2) アカウントの削除
+            elif action == 'delete_account':
+                account_id = request.form.get('account_id')
+                account = db.query(TargetAccount).filter(TargetAccount.id == account_id).first()
+                if account:
+                    # (★) 安全のため、関連する重み付けデータも先に削除
+                    db.query(UserTickerWeight).filter(UserTickerWeight.account_id == account_id).delete()
+                    # (★) 関連する投稿データ (CollectedPost) は、アカウントを削除しても残す（仕様）
+                    
+                    db.delete(account)
+                    db.commit()
+                    flash(f"アカウント '{account.username}' を削除しました。", 'success')
+                else:
+                    flash('削除対象のアカウントが見つかりません。', 'error')
+            
+            # (3) アカウントの有効/無効トグル
+            elif action == 'toggle_active':
+                account_id = request.form.get('account_id')
+                account = db.query(TargetAccount).filter(TargetAccount.id == account_id).first()
+                if account:
+                    account.is_active = not account.is_active
+                    db.commit()
+                    status = "有効化" if account.is_active else "無効化"
+                    flash(f"アカウント '{account.username}' を{status}しました。", 'info')
+                else:
+                    flash('対象のアカウントが見つかりません。', 'error')
+            
+            return redirect(url_for('accounts')) # POST処理後は必ずリダイレクト
+
+        # --- GETリクエスト処理 (ページ表示) ---
+        
+        # (★) 全アカウントを、関連データ（weights, posts）を含めて読み込む
+        all_accounts = db.query(TargetAccount).options(
+            # (★) 関連する weights（重み）を読み込む
+            # joinedload(TargetAccount.weights),
+            # (★) 関連する posts（投稿）を読み込む (lazy='dynamic' のため .all() は不要)
+            # joinedload(TargetAccount.posts) 
+            # selectinload(TargetAccount.weights)
+            # subqueryload(TargetAccount.weights)
+        ).order_by(TargetAccount.username).all()
+
+        return render_template("accounts.html", accounts=all_accounts)
+
+    except Exception as e:
+        db.rollback()
+        print(f"アカウント管理ページでエラー: {e}")
+        flash(f"処理中にエラーが発生しました: {e}", "error")
+        return redirect(url_for('index'))
+    finally:
+        db.close()
+# --- ▲▲▲【追加ここまで】▲▲▲ ---
+
 
 # --- 実行 ---
 if __name__ == "__main__":
