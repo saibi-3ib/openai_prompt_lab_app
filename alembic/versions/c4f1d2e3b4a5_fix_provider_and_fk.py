@@ -1,6 +1,6 @@
 """Add provider column (nullable), seed missing target_accounts, then add FK safely
 
-Revision ID: c3c244e4539d
+Revision ID: c4f1d2e3b4a5
 Revises: 98ab5c1ef8be
 Create Date: 2025-11-08 09:44:00.000000
 
@@ -9,7 +9,7 @@ from alembic import op
 import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
-revision = 'c3c244e4539d'
+revision = 'c4f1d2e3b4a5'
 down_revision = '98ab5c1ef8be'
 branch_labels = None
 depends_on = None

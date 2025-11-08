@@ -1,7 +1,7 @@
 """Merge multiple heads into a single head
 
 Revision ID: merge_6605489abec3c2
-Revises: 66054e00253c,89abeef2a6d7,c3c244e4539d
+Revises: 66054e00253c,89abeef2a6d7,c4f1d2e3b4a5
 Create Date: 2025-11-08 09:55:00.000000
 
 """
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'merge_6605489abec3c2'
-down_revision = ('66054e00253c', '89abeef2a6d7', 'c3c244e4539d')
+down_revision = ('66054e00253c', '89abeef2a6d7', 'c4f1d2e3b4a5')
 branch_labels = None
 depends_on = None
 
