@@ -1,0 +1,25 @@
+<nav class="bg-gray-800 shadow-md">
+  <div class="container mx-auto px-6 py-3 flex items-center justify-between">
+    <div class="flex items-center space-x-6">
+      <!-- 左側: ロゴ / メインリンク -->
+      <a href="/" class="text-white font-semibold text-lg hover:text-gray-200">🤖Prompt Manager</a>
+
+      <!-- 主なページリンク -->
+      <a href="/manage" class="text-gray-300 hover:text-white font-semibold">⚙️設定</a>
+
+      <!-- 名前を正しく反映 -->
+      <a href="/accounts" class="text-gray-300 hover:text-white font-semibold">👱ターゲット管理</a>
+      <a href="/history" class="text-gray-300 hover:text-white font-semibold">📜ポスト取得履歴</a>
+    </div>
+
+    <!-- 右側: ユーザー名 / ログイン -->
+    <div class="flex items-center space-x-4">
+      {% if current_user.is_authenticated %}
+        <span class="text-gray-300 hidden sm:inline">ようこそ、<span class="font-medium text-white">{{ current_user.username }}</span></span>
+        <a href="/logout" class="bg-red-600 hover:bg-red-700 text-white py-1 px-3 rounded">ログアウト</a>
+      {% else %}
+        <a href="/login" class="bg-blue-600 hover:bg-blue-700 text-white py-1 px-3 rounded">ログイン</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>

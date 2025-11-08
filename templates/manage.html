@@ -7,15 +7,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-900 text-white font-sans">
-
-    <header class="bg-gray-800 shadow-md">
-        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <h1 class="text-2xl font-bold text-white">設定管理</h1>
-            <a href="/" class="text-blue-400 hover:text-blue-300">← ダッシュボードに戻る</a>            
-            <a href="/history" class="text-blue-400 hover:text-blue-300 mr-6">📜 分析履歴</a>
-        </nav>
-    </header>
-
+    {% include '_nav.html' %}
     <main class="container mx-auto px-6 py-8">
         
         {% with messages = get_flashed_messages(with_categories=true) %}
@@ -104,7 +96,7 @@
                 </div>
             </form>
         </div>
-        
+
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
             <h2 class="text-xl font-semibold mb-4 text-purple-400">生データ一括インポート</h2>
             <p class="text-gray-400 mb-4 text-sm">

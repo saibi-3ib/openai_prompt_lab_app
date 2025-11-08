@@ -10,25 +10,7 @@
 </head>
 
 <body class="font-sans">
-
-    <header class="bg-gray-800 shadow-md sticky top-0 z-20">
-        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
-            <h1 class="text-xl font-bold text-white">Analysis Lab 🧪</h1>
-            <div class="flex items-center space-x-4">
-                <div class="bg-gray-700/50 border border-gray-600 rounded-lg px-3 py-1">
-                    <span class="text-sm text-gray-400">残高: </span>
-                    <span id="credit-monitor-display" class="font-bold text-lg text-yellow-400">
-                        ${{ '%.6f' | format(current_credit) }}
-                    </span>
-                    <span class="text-xs text-gray-400">USD</span>
-                </div>
-                <span class="text-sm text-gray-400">Worker: <span class="font-bold text-yellow-400">{{ current_provider }}</span></span>
-                <a href="/history" class="text-blue-400 hover:text-blue-300 transition duration-200">📜 分析履歴</a>
-                <a href="/manage" class="text-blue-400 hover:text-blue-300 transition duration-200">⚙️ 設定管理へ</a>
-            </div>
-        </nav>
-    </header>
-
+    {% include '_nav.html' %}
     <div class="layout-wrapper">
 
         <div id="filter-pane-wrapper" class="collapsed"> 
