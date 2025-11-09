@@ -476,6 +476,12 @@ export function initPostHandler(el, st) {
     window.triggerFilterDebounced = triggerFilterDebounced;
 
     // --- 6. 無限スクロールの初期化 ---
+    /* Updated postHandler.js — add infinite scroll (keyset pagination), append + DOM trimming.
+    Replace or merge into your existing static/js/postHandler.js.
+    Important: keep other helper functions (escapeHtml, processPostTextDOM, etc.) as in original file.
+    */
+
+    /* === 新規追加 / 変更ポイント === */
     /* 定数 */
     const PAGE_LIMIT = 50;
     const MAX_DOM_POSTS = 200;
@@ -501,7 +507,7 @@ export function initPostHandler(el, st) {
         const fragment = document.createDocumentFragment();
 
         posts.forEach((post) => {
-            // 既存の renderPostList と同じ HTML 構成をここでも使う（軽量化のため同様のテンプレを利用）
+            // 既存の renderPostList と同じ HTML 構成をここでも使う
             const formattedDate = post.posted_at_iso ? (new Date(post.posted_at_iso)).toISOString().slice(0,16).replace('T',' ') : 'N/A';
             const linkIcon = post.link_summary ? '<span class="text-yellow-500">🔗</span>' : '';
 
@@ -583,7 +589,6 @@ export function initPostHandler(el, st) {
             const selectedAccountCheckboxes = document.querySelectorAll('.account-filter-checkbox:checked');
             const accounts = Array.from(selectedAccountCheckboxes).map(cb => cb.value);
 
-            // --- runBtn の fetch 部分を以下で置き換え ---
             const response = await fetch('/api/filter-posts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -594,19 +599,17 @@ export function initPostHandler(el, st) {
                     sub_sector: selectedSubSectors,
                     sentiment,
                     limit: PAGE_LIMIT,
-                    cursor: null // initial search
+                    cursor: nextCursor
                 })
             });
 
-            if (!response.ok) throw new Error(`APIエラー: ${response.statusText}`);
+            if (!response.ok) throw new Error(`API error: ${response.statusText}`);
             const result = await response.json();
             if (result.status === 'success') {
-                // initial render replaces content
-                renderPostList(result.posts, elements.post.listContainer, state);
-                // set nextCursor for subsequent loads
+                appendPostList(result.posts);
                 nextCursor = result.next_cursor;
             } else {
-                throw new Error(result.message || '不明なサーバーエラー');
+                console.warn('loadMorePosts: result.status !== success', result);
             }
         } catch (e) {
             console.error('loadMorePosts failed:', e);
@@ -615,27 +618,55 @@ export function initPostHandler(el, st) {
         }
     }
 
-    /* --- 修正: runBtn click ハンドラの body で limit と cursor を渡し、nextCursor をセットする ---
-    locate the runBtn handler in initPostHandler and replace the API call section with the block below.
+    /* === runBtn ハンドラ内の fetch 部分を次の形に置換してください ===
+    （initPostHandler 内の elements.filter.runBtn click handler の fetch 部分を置換）
+    */
+        // --- 例: runBtn の fetch をこの形に置き換え ---
+    /*
+    const response = await fetch('/api/filter-posts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            keyword, accounts, likes, rts,
+            ticker: ticker_list,
+            sector: selectedSectors,
+            sub_sector: selectedSubSectors,
+            sentiment,
+            limit: PAGE_LIMIT,
+            cursor: null // initial search
+        })
+    });
+
+    if (!response.ok) throw new Error(`APIエラー: ${response.statusText}`);
+    const result = await response.json();
+    if (result.status === 'success') {
+        // initial render replaces content
+        renderPostList(result.posts, elements.post.listContainer, state);
+        // set nextCursor for subsequent loads
+        nextCursor = result.next_cursor;
+    } else {
+        throw new Error(result.message || '不明なサーバーエラー');
+    }
     */
 
-    // --- initPostHandler の末尾に追加 ---
+    /* === IntersectionObserver を initPostHandler の末尾に追加してください === */
     (function setupInfiniteScrollSentinel() {
+        // Dispatcher: only run when elements is initialized (initPostHandler executed)
+        // If elements not set yet, this IIFE will still run but elements will be undefined; attach in initPostHandler instead.
+        if (typeof elements === 'undefined' || !elements || !elements.post || !elements.post.listContainer) return;
+
         const sentinel = document.createElement('div');
         sentinel.id = 'infinite-scroll-sentinel';
-        // append sentinel after the post list container (so it will appear at the end)
         elements.post.listContainer.parentElement.appendChild(sentinel);
 
         const observer = new IntersectionObserver(entries => {
             entries.forEach(entry => {
                 if (entry.isIntersecting) {
-                    // only attempt to load more if nextCursor is set
                     if (nextCursor) loadMorePosts();
                 }
             });
         }, { root: null, rootMargin: '400px', threshold: 0.1 });
 
         observer.observe(sentinel);
-    })();
-    
+    })();   
 }
