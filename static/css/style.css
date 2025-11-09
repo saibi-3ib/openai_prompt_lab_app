@@ -220,26 +220,61 @@ a, .toggle-truncate-btn, .text-blue-400, .text-blue-500 {
 .autocomplete-suggestion.active {
     background-color: var(--color-container-bg); /* ホバー色 */
 }
-/* ▼▼▼【ここから追加】ティッカータグのスタイル ▼▼▼ */
+/* ▼▼▼ ティッカータグのスタイル（更新版：検索タグを黄色に寄せる） ▼▼▼ */
+/* 検索領域のタグ（ticker-tag） */
 .ticker-tag {
-    display: flex;
+    display: inline-flex;
     align-items: center;
-    background-color: var(--color-selected-bg); /* 選択色 */
+    gap: 0.5rem;
+    background-color: var(--color-accent); /* ← 検索タグは黄色系に（左側） */
     color: #000; /* 暗い文字色 */
     padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.875rem; /* 14px */
+    border-radius: 0.375rem;
+    font-size: 0.875rem;
     font-weight: 500;
     white-space: nowrap;
+    margin: 0 0.25rem 0.25rem 0;
+    border: 1px solid rgba(0,0,0,0.08);
 }
-.ticker-tag-remove {
+
+/* 検索タグ内の削除ボタン（JS: .remove-tag-btn に合わせる） */
+.remove-tag-btn,
+.ticker-tag .remove-tag-btn {
     margin-left: 0.5rem;
     cursor: pointer;
     font-weight: bold;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 0;
+    line-height: 1;
 }
-.ticker-tag-remove:hover {
+.remove-tag-btn:hover {
     color: #db2727; /* 赤色 */
 }
+
+/* ポスト内に表示されるティッカーボタン（ticker-btn）を検索タグに近い見た目に揃える（やや控えめ） */
+.ticker-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background-color: rgba(255,255,255,0.04);
+    color: var(--color-text-primary);
+    padding: 0.2rem 0.45rem;
+    border-radius: 0.375rem;
+    font-size: 0.8rem;
+    border: 1px solid rgba(255,255,255,0.03);
+    cursor: pointer;
+    transition: background-color 0.12s ease, transform 0.06s ease;
+}
+.ticker-btn:hover {
+    background-color: rgba(255,255,255,0.06);
+    transform: translateY(-1px);
+}
+
+/* 互換性: 古いクラス名が残っている場合もカバー */
+.ticker-tag-remove { display: none; }
+
 #filter-ticker-input {
-    min-width: 100px; /* 入力欄が小さくなりすぎないように */
+    min-width: 100px;
 }

@@ -1,5 +1,64 @@
-// --- 内部ヘルパー関数 ---
+// --- postHandler.js (updated) ---
+// Responsibilities:
+// - renderPostList: render posts returned from server (server-side or API)
+// - initPostHandler: wire up event handlers (selection, filtering, batch analysis)
+// - Delegated handling for .ticker-btn and ticker-tag removal
+// - Auto-trigger filtering on inputs with debounce
 
+// --- ヘルパー / ユーティリティ ---
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/"/g, '&quot;')
+              .replace(/'/g, '&#39;')
+              .replace(/</g, '&lt;')
+              .replace(/>/g, '&gt;')
+              .replace(/\n/g, '&#10;');
+}
+
+function debounce(fn, wait) {
+    let t;
+    return function(...args) {
+        clearTimeout(t);
+        t = setTimeout(() => fn.apply(this, args), wait);
+    };
+}
+
+// run ボタンをクリックする代わりに、filter 発火を一元化する
+function triggerFilter() {
+    const runBtn = elements?.filter?.runBtn || document.getElementById('filter-run-btn');
+    if (runBtn) runBtn.click();
+}
+const triggerFilterDebounced = debounce(() => triggerFilter(), 250);
+
+/**
+ * addTickerTag:
+ * 既存の ticker-tag と見た目・構造を揃えてタグを追加する。
+ * 重複は無視する。追加に成功したら true を返す。
+ * - 正規化は大文字に統一して重複を防ぐ（AAPL == aapl）。
+ * - 新しいタグは先頭に挿入して左側に表示されるようにする。
+ */
+function addTickerTag(ticker) {
+    if (!ticker) return false;
+    const tagsContainer = document.getElementById('ticker-tags-container');
+    if (!tagsContainer) return false;
+
+    const normalized = ticker.trim().toUpperCase();
+    if (!normalized) return false;
+
+    // 重複チェック（data-value で厳密に判定）
+    if (tagsContainer.querySelector(`.ticker-tag[data-value="${normalized}"]`)) return false;
+
+    const tag = document.createElement('span');
+    tag.className = 'ticker-tag';
+    tag.dataset.value = normalized;
+    tag.innerHTML = `${escapeHtml(normalized)} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
+
+    // 先頭に挿入（左側に表示される）
+    tagsContainer.insertBefore(tag, tagsContainer.firstChild);
+    return true;
+}
+
+// --- 投稿レンダリング関数 ---
 /**
  * 投稿リストをDOMにレンダリングする
  * @param {Array} posts - APIから取得した投稿オブジェクトの配列
@@ -7,15 +66,9 @@
  * @param {object} state - app.js の共有state
  */
 function renderPostList(posts, container, state) {
-// --- renderPostList 内の注意 ---
-// renderPostList の中で .ticker-btn を作るのはそのままにして、
-// 「個別に addEventListener をつける」処理は必ず削除してください。
-// （以前のコードにinserted.querySelectorAll('.ticker-btn').forEach(...) があれば削除）
-// テンプレートで生成するボタンは class="ticker-btn" data-ticker="..." を付けておけばOKです。
-
     container.innerHTML = '';
     
-    if (posts.length === 0) {
+    if (!posts || posts.length === 0) {
         container.innerHTML = '<p class="text-gray-400 text-center p-4">該当する投稿はありません。</p>';
         return;
     }
@@ -42,8 +95,9 @@ function renderPostList(posts, container, state) {
                 let icon = '➖️';
                 if (ts.sentiment === 'Positive') icon = '✅️';
                 if (ts.sentiment === 'Negative') icon = '❌';
-                tickerTagsHtml += `<button type="button" class="ticker-btn text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border text-white" data-ticker="${escapeHtml(ts.ticker)}">
-                                        <span class="font-semibold mr-1">${escapeHtml(ts.ticker)}</span><span class="text-sm">${icon}</span>
+                // data-ticker 属性を付与（表示は大文字化済みで統一していないAPIが来ても安全）
+                tickerTagsHtml += `<button type="button" class="ticker-btn text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border text-white" data-ticker="${escapeHtml((ts.ticker||'').toUpperCase())}">
+                                        <span class="font-semibold mr-1">${escapeHtml((ts.ticker||'').toUpperCase())}</span><span class="text-sm">${icon}</span>
                                    </button>`;
             });
         } else {
@@ -58,12 +112,12 @@ function renderPostList(posts, container, state) {
              data-index="${index}">
             <div class="flex justify-between items-start">
                 <div class="flex items-center space-x-3">
-                    <span class="font-bold text-sm post-username">${post.username}</span>
+                    <span class="font-bold text-sm post-username">${escapeHtml(post.username)}</span>
                     <span class="text-xs text-gray-400">${formattedDate}</span>
                 </div>
                 <div class="flex space-x-3 text-xs text-gray-400 text-right flex-shrink-0">
-                    <span>❤️ ${post.like_count}</span>
-                    <span>🔁 ${post.retweet_count}</span>
+                    <span>❤️ ${post.like_count ?? 0}</span>
+                    <span>🔁 ${post.retweet_count ?? 0}</span>
                     ${linkIcon}
                 </div>
             </div>
@@ -80,16 +134,12 @@ function renderPostList(posts, container, state) {
             </div>
 
             <div class="mt-1 text-right">
-                <a href="${post.source_url}" target="_blank" class="text-xs hover:underline">元の投稿 &rarr;</a>
+                <a href="${post.source_url || '#'}" target="_blank" class="text-xs hover:underline">元の投稿 &rarr;</a>
             </div>
         </div>
         `;
 
         container.insertAdjacentHTML('beforeend', postHtml);
-
-        // --- NOTE ---
-        // ここで個別に .ticker-btn にイベントをバインドしないでください。
-        // .ticker-btn のクリックは initPostHandler のデリゲーションで一元処理します。
     });
 
     // HTML挿入後に、テキスト処理 (Autolinker, もっと見る) を実行
@@ -99,10 +149,7 @@ function renderPostList(posts, container, state) {
     clearSelection(state, elements);
 }
 
-/**
- * 投稿本文の Autolinker と「もっと見る」を適用
- * @param {object} autolinker - Autolinker インスタンス
- */
+// --- 投稿本文の Autolinker と「もっと見る」を適用 ---
 function processPostTextDOM(autolinker) {
     const maxLines = 3; 
     const lineHeight = 1.5 * 14;
@@ -149,87 +196,26 @@ function processPostTextDOM(autolinker) {
     });
 }
 
-/**
- * 選択状態のUI（カウンターなど）を更新
- * @param {object} state - app.js の共有state
- * @param {object} elements - app.js のDOM要素
- */
+// --- 選択 UI 更新 / クリア ---
 function updateSelectionUI(state, elements) {
     const count = state.selectedPostIds.size;
     elements.post.selectionCounter.textContent = `${count}件 選択中`;
-    elements.action.batchBtnCounter.textContent = `${count}`;
+    if (elements.action && elements.action.batchBtnCounter) {
+        elements.action.batchBtnCounter.textContent = `${count}`;
+    }
     
     document.querySelectorAll('.post-item').forEach(item => {
         item.classList.toggle('selected', state.selectedPostIds.has(item.dataset.postId));
     });
 }
 
-/**
- * すべての選択を解除
- * @param {object} state - app.js の共有state
- * @param {object} elements - app.js のDOM要素
- */
 function clearSelection(state, elements) {
     state.selectedPostIds.clear();
     state.lastClickedIndex = -1;
     updateSelectionUI(state, elements);
 }
 
-/**
- * HTMLエスケープ用ヘルパー
- */
-function escapeHtml(str) {
-    if (!str) return '';
-    return str.replace(/"/g, '&quot;')
-              .replace(/'/g, '&#39;')
-              .replace(/</g, '&lt;')
-              .replace(/>/g, '&gt;')
-              .replace(/\n/g, '&#10;');
-}
-
-function debounce(fn, wait) {
-    let t;
-    return function(...args) {
-        clearTimeout(t);
-        t = setTimeout(() => fn.apply(this, args), wait);
-    };
-}
-
-/**
- * addTickerTag:
- * 既存の ticker-tag と見た目・構造を揃えてタグを追加する。
- * 重複は無視する。追加に成功したら true を返す。
- */
-function addTickerTag(ticker) {
-    const tagsContainer = document.getElementById('ticker-tags-container');
-    if (!tagsContainer || !ticker) return false;
-    if (tagsContainer.querySelector(`.ticker-tag[data-value="${ticker}"]`)) return false;
-
-    // 見た目を既存タグに合わせるクラスを使う（必要なら調整）
-    const tag = document.createElement('span');
-    tag.className = 'ticker-tag inline-flex items-center gap-2 bg-gray-700 text-xs px-2 py-1 rounded';
-    tag.dataset.value = ticker;
-
-    // 内部は既存 UI に似せる (ticker と × ボタン)
-    tag.innerHTML = `${escapeHtml(ticker)} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
-    tagsContainer.appendChild(tag);
-    return true;
-}
-
-/**
- * triggerFilter を debounce して何度も発火しないようにする
- * （runBtn.click() をトリガーする簡易実装）
- */
-function triggerFilter() {
-    const runBtn = elements?.filter?.runBtn || document.getElementById('filter-run-btn');
-    if (runBtn) runBtn.click();
-}
-const triggerFilterDebounced = debounce(() => triggerFilter(), 200);
-
-
-// --- メインの初期化関数 (app.js から呼ばれる) ---
-
-// (★) グローバルスコープで elements を保持 (コールバック関数で使うため)
+// --- メイン初期化関数（app.js から呼ばれる） ---
 let elements;
 let state;
 
@@ -239,12 +225,10 @@ let state;
  * @param {object} st - app.js から渡される共有state
  */
 export function initPostHandler(el, st) {
-    // (★) elements と state をモジュール変数にキャッシュ
     elements = el;
     state = st;
 
-    // --- 1. 投稿の選択機能 ---
-    // イベントデリゲーション: 投稿アイテムのクリックハンドラ
+    // --- 1. 投稿の選択機能（イベントデリゲーション） ---
     elements.post.listContainer?.addEventListener('click', (e) => {
         const clickedItem = e.target.closest('.post-item');
 
@@ -283,8 +267,18 @@ export function initPostHandler(el, st) {
         const likes = elements.filter.likesInput.value ? parseInt(elements.filter.likesInput.value, 10) : null;
         const rts = elements.filter.rtsInput.value ? parseInt(elements.filter.rtsInput.value, 10) : null;
         
+        // タグ群から ticker を取得
         const tickerTags = document.querySelectorAll('#ticker-tags-container .ticker-tag');
         const ticker_list = Array.from(tickerTags).map(tag => tag.dataset.value);
+
+        // 追加: 入力欄の現在値を一時的に検索対象に含める（Enter前のtyping時に対応）
+        const tickerInputValue = (document.getElementById('filter-ticker-input') || {}).value;
+        if (tickerInputValue && tickerInputValue.trim()) {
+            if (!ticker_list.includes(tickerInputValue.trim().toUpperCase())) {
+                ticker_list.push(tickerInputValue.trim().toUpperCase());
+            }
+        }
+
         const sentiment = elements.filter.sentimentSelect.value;
         const selectedSectors = Array.from(document.querySelectorAll('.sector-parent-cb:checked')).map(cb => cb.value);
         const selectedSubSectors = Array.from(document.querySelectorAll('.sector-child-cb:checked')).map(cb => cb.value);
@@ -298,7 +292,7 @@ export function initPostHandler(el, st) {
             elements.accountFilter.label.textContent = `${accounts.length}件のアカウント選択中`;
         }
         elements.accountFilter.menu.classList.add('hidden');
-        elements.sectorFilter.menu.classList.add('hidden'); // (★) セクターも閉じる
+        elements.sectorFilter.menu.classList.add('hidden'); // セクターも閉じる
 
         // 3. APIにリクエスト
         const btn = elements.filter.runBtn;
@@ -406,7 +400,6 @@ export function initPostHandler(el, st) {
                 batchBtn.disabled = false;
                 const count = state.selectedPostIds.size;
                 batchBtn.innerHTML = `<span id="batch-btn-counter">${count}</span> 件をまとめて分析実行`;
-                // (★) batchBtnCounter はHTMLが再生成されるので、elements から再取得して更新する
                 const newBatchBtnCounter = document.getElementById('batch-btn-counter'); 
                 if(newBatchBtnCounter) newBatchBtnCounter.textContent = count;
             }
@@ -414,33 +407,29 @@ export function initPostHandler(el, st) {
     }
 
     // --- 4. 初期読み込み時のテキスト処理 ---
-    // (サーバーサイドレンダリングされた投稿に対して実行)
     processPostTextDOM(state.autolinker);
 
-    // (A) ポストリスト内での ticker-btn クリックをデリゲートして処理
+    // --- 5. デリゲーションと自動絞り込みの登録（1回だけ） ---
+    // (A) ポストリスト内での ticker-btn クリック（デリゲーション）
     elements.post.listContainer?.addEventListener('click', (e) => {
         const btn = e.target.closest('.ticker-btn');
         if (!btn) return;
 
-        // ポスト選択ハンドラに影響を与えないようにする
         e.stopPropagation();
         e.preventDefault();
 
-        const ticker = btn.dataset.ticker;
+        const ticker = (btn.dataset.ticker || '').trim();
         if (!ticker) return;
 
-        // 見た目を揃えてタグを追加（重複は addTickerTag 内で判定）
         const added = addTickerTag(ticker);
-        if (added) {
-            // タグを追加したら自動で絞り込み（debounce）
-            triggerFilterDebounced();
-        } else {
-            // 既にあれば少し揺らす等の UI フィードバックを検討（省略）
-            triggerFilterDebounced(); // 既にあっても再検索しておく
-        }
+        const tickerInput = document.getElementById('filter-ticker-input');
+        if (tickerInput) tickerInput.blur();
+
+        if (added) triggerFilterDebounced();
+        else triggerFilterDebounced();
     });
 
-    // (B) タグ領域の × 削除ボタンをデリゲーションで処理
+    // (B) タグ領域の × 削除をデリゲート
     document.getElementById('ticker-tags-container')?.addEventListener('click', (e) => {
         const rem = e.target.closest('.remove-tag-btn');
         if (!rem) return;
@@ -451,19 +440,38 @@ export function initPostHandler(el, st) {
         triggerFilterDebounced();
     });
 
-    // (C) 各フィルタ入力で自動で絞り込み（入力時・変更時に debounce）
+    // (C) ティッカー検索入力の input イベントで自動絞り込み（入力中も発火）
+    // --- 修正箇所: filter 実行時に入力中の値を無条件で ticker_list に追加しない ---
+    // 変更前（削除するブロック）:
+    // const tickerInputValue = (document.getElementById('filter-ticker-input') || {}).value;
+    // if (tickerInputValue && tickerInputValue.trim()) {
+    //     if (!ticker_list.includes(tickerInputValue.trim().toUpperCase())) {
+    //         ticker_list.push(tickerInputValue.trim().toUpperCase());
+    //     }
+    // }
+
+    // 代わりに何もしない（タグは addTag / サジェストクリック / Enter で追加される想定）
+    // --- さらに修正: initPostHandler 内の tickerInput の 'input' リスナを削除してください ---
+    // つまり、以下をファイルから削除する:
+    // tickerInputEl.addEventListener('input', () => {
+    //     triggerFilterDebounced();
+    // });
+
+    // (D) 各種フィルタ入力で自動絞り込み
     elements.filter.keywordInput?.addEventListener('input', triggerFilterDebounced);
     elements.filter.likesInput?.addEventListener('input', triggerFilterDebounced);
     elements.filter.rtsInput?.addEventListener('input', triggerFilterDebounced);
     elements.filter.sentimentSelect?.addEventListener('change', triggerFilterDebounced);
 
-    // account / sector チェックボックスの変化も監視（存在する場合）
     document.querySelectorAll('.account-filter-checkbox').forEach(cb => cb.addEventListener('change', triggerFilterDebounced));
     document.querySelectorAll('.sector-parent-cb, .sector-child-cb').forEach(cb => cb.addEventListener('change', triggerFilterDebounced));
 
-    // (D) 絞り込みリセットボタンやタグクリアの処理があるなら、それらにも triggerFilterDebounced をつなぐ
     elements.filter.resetBtn?.addEventListener('click', () => {
-        // reset ボタンがフィルタ値をクリアした後に検索を実行する（小さな遅延で）
         setTimeout(() => triggerFilterDebounced(), 50);
     });
+
+    // (E) 他モジュールから使えるようにグローバルに公開（サジェスト側などが呼べる）
+    //      直接 window に置くのは簡便で、既存コードの修正を最小にします。
+    window.addTickerTag = addTickerTag;
+    window.triggerFilterDebounced = triggerFilterDebounced;
 }

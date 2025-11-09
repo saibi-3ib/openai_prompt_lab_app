@@ -26,37 +26,69 @@ function setupAutocomplete(elements) {
     const selectedTickers = new Set();
     let debounceTimer;
 
-    // 新しいタグをDOMに追加する関数
+    // 新しいタグをDOMに追加する関数（安全にDOMで構築、innerHTML を使わない）
     function addTag(value) {
-        const tickerValue = value.toUpperCase();
-        if (selectedTickers.has(tickerValue) || !tickerValue) {
+        if (!value) return;
+        const tickerValueRaw = String(value).trim();
+        if (!tickerValueRaw) return;
+
+        // 正規化（重複防止のため大文字化）
+        const tickerValue = tickerValueRaw.toUpperCase();
+
+        // selectedTickers Set と DOM の両方で重複チェックを行う（堅牢化）
+        if (selectedTickers.has(tickerValue)) {
             inputEl.value = '';
+            suggestionsEl.innerHTML = '';
+            suggestionsEl.classList.add('hidden');
             return;
         }
-        
+        // Also check DOM container (in case other code added a tag)
+        if (tagsContainer.querySelector(`.ticker-tag[data-value="${tickerValue}"]`)) {
+            selectedTickers.add(tickerValue); // keep Set in sync
+            inputEl.value = '';
+            suggestionsEl.innerHTML = '';
+            suggestionsEl.classList.add('hidden');
+            return;
+        }
+
         selectedTickers.add(tickerValue);
 
-        const tagDiv = document.createElement('div');
+        // 要素を安全に構築（テキストは textContent で挿入）
+        const tagDiv = document.createElement('span');
         tagDiv.className = 'ticker-tag';
         tagDiv.dataset.value = tickerValue;
-        tagDiv.textContent = tickerValue;
-        
-        const removeBtn = document.createElement('span');
-        removeBtn.className = 'ticker-tag-remove';
-        removeBtn.textContent = 'x';
-        
-        removeBtn.addEventListener('click', () => {
-            selectedTickers.delete(tickerValue);
-            tagDiv.remove();
-        });
-        
-        tagDiv.appendChild(removeBtn);
-        inputEl.parentElement.before(tagDiv);
-        
+
+        const textSpan = document.createElement('span');
+        textSpan.textContent = tickerValue;
+        tagDiv.appendChild(textSpan);
+
+        const remBtn = document.createElement('button');
+        remBtn.type = 'button';
+        remBtn.className = 'remove-tag-btn text-xs ml-2';
+        remBtn.textContent = '×';
+        tagDiv.appendChild(remBtn);
+
+        // 先頭に挿入して「左側に表示」されるようにする
+        if (tagsContainer.firstChild) tagsContainer.insertBefore(tagDiv, tagsContainer.firstChild);
+        else tagsContainer.appendChild(tagDiv);
+
+        // クリアとサジェスト非表示
         inputEl.value = '';
         suggestionsEl.innerHTML = '';
         suggestionsEl.classList.add('hidden');
-        inputEl.focus();
+
+        // 削除ボタンの動作（ローカルで Set を更新）
+        remBtn.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            ev.preventDefault();
+            selectedTickers.delete(tickerValue);
+            tagDiv.remove();
+            // 自動絞り込み（debounced）がある場合は呼ぶ
+            if (window.triggerFilterDebounced) window.triggerFilterDebounced();
+        });
+
+        // 追加後は自動絞り込み（debounced）が公開されていれば呼び出す
+        if (window.triggerFilterDebounced) window.triggerFilterDebounced();
     }
 
     // 入力イベント
@@ -86,8 +118,10 @@ function setupAutocomplete(elements) {
                         div.className = 'autocomplete-suggestion';
                         div.textContent = item.label; // "AAPL (Apple Inc.)"
                         
+                        // クリックで addTag(item.value) を呼ぶ（item.value is ticker only）
                         div.addEventListener('click', () => {
-                            addTag(item.value); // item.value = "AAPL"
+                            // call addTag with ticker (item.value)
+                            addTag(item.value);
                         });
                         
                         suggestionsEl.appendChild(div);
