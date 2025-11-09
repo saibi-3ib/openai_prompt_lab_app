@@ -405,6 +405,14 @@ def filter_posts():
 
         results_list = []
         for post in filtered_posts:
+            # ticker_sentiments を API に含める（各要素は {ticker, sentiment}）
+            ticker_list = []
+            for ts in getattr(post, "ticker_sentiments", []):
+                ticker_list.append({
+                    "ticker": ts.ticker,
+                    "sentiment": ts.sentiment
+                })
+
             results_list.append({
                 "id": post.id,
                 "username": post.username,
@@ -413,7 +421,8 @@ def filter_posts():
                 "source_url": post.source_url,
                 "like_count": post.like_count,
                 "retweet_count": post.retweet_count,
-                "link_summary": post.link_summary
+                "link_summary": post.link_summary,
+                "ticker_sentiments": ticker_list
             })
 
         return jsonify({

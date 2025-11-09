@@ -29,12 +29,27 @@ function renderPostList(posts, container, state) {
         
         const linkIcon = post.link_summary ? '<span class="text-yellow-500">🔗</span>' : '';
 
+        // ティッカータグ部分（API経由で取得した post.ticker_sentiments を利用）
+        let tickerTagsHtml = '';
+        if (post.ticker_sentiments && post.ticker_sentiments.length > 0) {
+            post.ticker_sentiments.forEach(ts => {
+                let icon = '➖️';
+                if (ts.sentiment === 'Positive') icon = '✅️';
+                if (ts.sentiment === 'Negative') icon = '❌';
+                tickerTagsHtml += `<button type="button" class="ticker-btn text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border text-white" data-ticker="${escapeHtml(ts.ticker)}">
+                                        <span class="font-semibold mr-1">${escapeHtml(ts.ticker)}</span><span class="text-sm">${icon}</span>
+                                   </button>`;
+            });
+        } else {
+            tickerTagsHtml = `<span class="text-xs text-gray-500 italic">(銘柄解析なし)</span>`;
+        }
+
+        // postHtml の適切箇所に tickerTagsHtml を埋め込む（例: post本文の直後あたり）
         const postHtml = `
         <div id="post-${post.id}" 
              class="post-item rounded shadow p-2 border hover:bg-gray-700 transition duration-150 ease-in-out cursor-pointer"
              data-post-id="${post.id}"
              data-index="${index}">
-            
             <div class="flex justify-between items-start">
                 <div class="flex items-center space-x-3">
                     <span class="font-bold text-sm post-username">${post.username}</span>
@@ -46,17 +61,51 @@ function renderPostList(posts, container, state) {
                     ${linkIcon}
                 </div>
             </div>
+
             <div class="mt-1">
                 <div class="post-text text-sm leading-snug"
                      data-original-text="${escapeHtml(post.original_text || '')}">
                 </div>
             </div>
+
+            <!-- ここにティッカータグを挿入 -->
+            <div class="mt-2 flex flex-wrap gap-2 items-center">
+                ${tickerTagsHtml}
+            </div>
+
             <div class="mt-1 text-right">
                 <a href="${post.source_url}" target="_blank" class="text-xs hover:underline">元の投稿 &rarr;</a>
             </div>
         </div>
         `;
+
         container.insertAdjacentHTML('beforeend', postHtml);
+
+        // 追加: 生成した .ticker-btn に対するクリック動作をバインド（タグクリックでフィルタをセットして検索トリガ）
+        const inserted = container.querySelector(`#post-${post.id}`);
+        if (inserted) {
+            inserted.querySelectorAll('.ticker-btn').forEach(btn => {
+                btn.addEventListener('click', (ev) => {
+                    ev.stopPropagation(); // ポスト選択クリックの伝播を止める
+                    const ticker = btn.dataset.ticker;
+                    // ticker-tags-container に同じタグがなければ追加する
+                    const tagsContainer = document.getElementById('ticker-tags-container');
+                    if (tagsContainer && !tagsContainer.querySelector(`.ticker-tag[data-value="${ticker}"]`)) {
+                        const tag = document.createElement('span');
+                        tag.className = 'ticker-tag bg-gray-700 text-xs px-2 py-1 rounded flex items-center gap-2';
+                        tag.dataset.value = ticker;
+                        tag.innerHTML = `${ticker} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
+                        tagsContainer.appendChild(tag);
+                    }
+                    // 既存の「実行」ボタンをクリックしてフィルタを発動（initPostHandler 内のハンドラを活用）
+                    const runBtn = document.getElementById('filter-run-btn');
+                    if (runBtn) runBtn.click();
+                });
+            });
+        }
+        // --- 追加修正: initPostHandler の post-item クリックハンドラで、ticker-btn クリック時は選択動作を無視する ---
+        // （既存の条件に e.target.closest('.ticker-btn') の判定を追加してください）
+        // 例: if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn') || e.target.closest('.ticker-btn')) { return; }
     });
 
     // HTML挿入後に、テキスト処理 (Autolinker, もっと見る) を実行
