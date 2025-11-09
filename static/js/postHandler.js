@@ -476,30 +476,33 @@ export function initPostHandler(el, st) {
     window.triggerFilterDebounced = triggerFilterDebounced;
 
     // --- 6. 無限スクロールの初期化 ---
+    /* 定数 */
     const PAGE_LIMIT = 50;
     const MAX_DOM_POSTS = 200;
+
+    /* nextCursor とロードフラグ（モジュールスコープ） */
     let nextCursor = null;
     let isLoadingMore = false;
 
-    // Append posts (reuse render HTML generation). This creates and appends each post.
+    /* DOM トリミング: MAX_DOM_POSTS を超えたら古い要素を削除 */
+    function trimOldPosts() {
+        const container = elements.post.listContainer;
+        if (!container) return;
+        while (container.children.length > MAX_DOM_POSTS) {
+            container.removeChild(container.firstElementChild);
+        }
+    }
+
+    /* appendPostList: サーバからの posts を既存DOMに追加する（renderPostList は置換用のまま） */
     function appendPostList(posts) {
         const container = elements.post.listContainer;
         if (!container || !posts || posts.length === 0) return;
 
-        // Build HTML with same structure as renderPostList for each post
-        posts.forEach((post, idx) => {
-            let formattedDate = 'N/A';
-            if (post.posted_at_iso) {
-                try {
-                    const date = new Date(post.posted_at_iso);
-                    formattedDate = date.getFullYear() + '-' +
-                                ('0' + (date.getMonth() + 1)).slice(-2) + '-' +
-                                ('0' + date.getDate()).slice(-2) + ' ' +
-                                ('0' + date.getHours()).slice(-2) + ':' +
-                                ('0' + date.getMinutes()).slice(-2);
-                } catch (e) { console.warn('Invalid date format:', post.posted_at_iso); }
-            }
+        const fragment = document.createDocumentFragment();
 
+        posts.forEach((post) => {
+            // 既存の renderPostList と同じ HTML 構成をここでも使う（軽量化のため同様のテンプレを利用）
+            const formattedDate = post.posted_at_iso ? (new Date(post.posted_at_iso)).toISOString().slice(0,16).replace('T',' ') : 'N/A';
             const linkIcon = post.link_summary ? '<span class="text-yellow-500">🔗</span>' : '';
 
             let tickerTagsHtml = '';
@@ -532,44 +535,43 @@ export function initPostHandler(el, st) {
                         ${linkIcon}
                     </div>
                 </div>
+
                 <div class="mt-1">
                     <div class="post-text text-sm leading-snug"
                         data-original-text="${escapeHtml(post.original_text || '')}">
                     </div>
                 </div>
+
                 <div class="mt-2 flex flex-wrap gap-2 items-center">
                     ${tickerTagsHtml}
                 </div>
+
                 <div class="mt-1 text-right">
                     <a href="${post.source_url || '#'}" target="_blank" class="text-xs hover:underline">元の投稿 &rarr;</a>
                 </div>
             </div>
             `;
-            container.insertAdjacentHTML('beforeend', postHtml);
+            const temp = document.createElement('div');
+            temp.innerHTML = postHtml;
+            fragment.appendChild(temp.firstElementChild);
         });
 
-        // process new DOM
+        container.appendChild(fragment);
+
+        // Text processing for newly added posts
         processPostTextDOM(state.autolinker);
         clearSelection(state, elements);
         trimOldPosts();
     }
 
-    // Trim DOM to keep at most MAX_DOM_POSTS posts
-    function trimOldPosts() {
-        const container = elements.post.listContainer;
-        if (!container) return;
-        while (container.children.length > MAX_DOM_POSTS) {
-            container.removeChild(container.firstElementChild);
-        }
-    }
-
-    // Load more posts via /api/filter-posts with cursor and limit
+    /* loadMorePosts: nextCursor が存在する限りサーバへ追加取得 */
     async function loadMorePosts() {
         if (isLoadingMore) return;
-        if (!nextCursor) return; // no more
+        if (!nextCursor) return;
         isLoadingMore = true;
+
         try {
-            // gather current filter params (reuse logic from runBtn handler)
+            // gather current filter params (same as runBtn)
             const keyword = elements.filter.keywordInput.value.trim();
             const likes = elements.filter.likesInput.value ? parseInt(elements.filter.likesInput.value, 10) : null;
             const rts = elements.filter.rtsInput.value ? parseInt(elements.filter.rtsInput.value, 10) : null;
@@ -581,6 +583,7 @@ export function initPostHandler(el, st) {
             const selectedAccountCheckboxes = document.querySelectorAll('.account-filter-checkbox:checked');
             const accounts = Array.from(selectedAccountCheckboxes).map(cb => cb.value);
 
+            // --- runBtn の fetch 部分を以下で置き換え ---
             const response = await fetch('/api/filter-posts', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -591,18 +594,19 @@ export function initPostHandler(el, st) {
                     sub_sector: selectedSubSectors,
                     sentiment,
                     limit: PAGE_LIMIT,
-                    cursor: nextCursor
+                    cursor: null // initial search
                 })
             });
 
-            if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+            if (!response.ok) throw new Error(`APIエラー: ${response.statusText}`);
             const result = await response.json();
             if (result.status === 'success') {
-                appendPostList(result.posts);
+                // initial render replaces content
+                renderPostList(result.posts, elements.post.listContainer, state);
+                // set nextCursor for subsequent loads
                 nextCursor = result.next_cursor;
-                // if no more posts, you can optionally disconnect observer (handled externally)
             } else {
-                console.warn('loadMorePosts: result.status !== success', result);
+                throw new Error(result.message || '不明なサーバーエラー');
             }
         } catch (e) {
             console.error('loadMorePosts failed:', e);
@@ -611,19 +615,27 @@ export function initPostHandler(el, st) {
         }
     }
 
-    // sentinel を作ってコンテナの直後に配置
-    const sentinel = document.createElement('div');
-    sentinel.id = 'infinite-scroll-sentinel';
-    elements.post.listContainer.parentElement.appendChild(sentinel);
+    /* --- 修正: runBtn click ハンドラの body で limit と cursor を渡し、nextCursor をセットする ---
+    locate the runBtn handler in initPostHandler and replace the API call section with the block below.
+    */
 
-    const observer = new IntersectionObserver(entries => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                // only load more if we have a cursor
-                if (nextCursor) loadMorePosts();
-            }
-        });
-    }, { root: null, rootMargin: '400px', threshold: 0.1 });
+    // --- initPostHandler の末尾に追加 ---
+    (function setupInfiniteScrollSentinel() {
+        const sentinel = document.createElement('div');
+        sentinel.id = 'infinite-scroll-sentinel';
+        // append sentinel after the post list container (so it will appear at the end)
+        elements.post.listContainer.parentElement.appendChild(sentinel);
 
-    observer.observe(sentinel);    
+        const observer = new IntersectionObserver(entries => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    // only attempt to load more if nextCursor is set
+                    if (nextCursor) loadMorePosts();
+                }
+            });
+        }, { root: null, rootMargin: '400px', threshold: 0.1 });
+
+        observer.observe(sentinel);
+    })();
+    
 }
