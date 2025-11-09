@@ -474,4 +474,156 @@ export function initPostHandler(el, st) {
     //      直接 window に置くのは簡便で、既存コードの修正を最小にします。
     window.addTickerTag = addTickerTag;
     window.triggerFilterDebounced = triggerFilterDebounced;
+
+    // --- 6. 無限スクロールの初期化 ---
+    const PAGE_LIMIT = 50;
+    const MAX_DOM_POSTS = 200;
+    let nextCursor = null;
+    let isLoadingMore = false;
+
+    // Append posts (reuse render HTML generation). This creates and appends each post.
+    function appendPostList(posts) {
+        const container = elements.post.listContainer;
+        if (!container || !posts || posts.length === 0) return;
+
+        // Build HTML with same structure as renderPostList for each post
+        posts.forEach((post, idx) => {
+            let formattedDate = 'N/A';
+            if (post.posted_at_iso) {
+                try {
+                    const date = new Date(post.posted_at_iso);
+                    formattedDate = date.getFullYear() + '-' +
+                                ('0' + (date.getMonth() + 1)).slice(-2) + '-' +
+                                ('0' + date.getDate()).slice(-2) + ' ' +
+                                ('0' + date.getHours()).slice(-2) + ':' +
+                                ('0' + date.getMinutes()).slice(-2);
+                } catch (e) { console.warn('Invalid date format:', post.posted_at_iso); }
+            }
+
+            const linkIcon = post.link_summary ? '<span class="text-yellow-500">🔗</span>' : '';
+
+            let tickerTagsHtml = '';
+            if (post.ticker_sentiments && post.ticker_sentiments.length > 0) {
+                post.ticker_sentiments.forEach(ts => {
+                    let icon = '➖️';
+                    if (ts.sentiment === 'Positive') icon = '✅️';
+                    if (ts.sentiment === 'Negative') icon = '❌';
+                    tickerTagsHtml += `<button type="button" class="ticker-btn text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border text-white" data-ticker="${escapeHtml((ts.ticker||'').toUpperCase())}">
+                                            <span class="font-semibold mr-1">${escapeHtml((ts.ticker||'').toUpperCase())}</span><span class="text-sm">${icon}</span>
+                                    </button>`;
+                });
+            } else {
+                tickerTagsHtml = `<span class="text-xs text-gray-500 italic">(銘柄解析なし)</span>`;
+            }
+
+            const postHtml = `
+            <div id="post-${post.id}" 
+                class="post-item rounded shadow p-2 border hover:bg-gray-700 transition duration-150 ease-in-out cursor-pointer"
+                data-post-id="${post.id}"
+                data-index="${container.children.length}">
+                <div class="flex justify-between items-start">
+                    <div class="flex items-center space-x-3">
+                        <span class="font-bold text-sm post-username">${escapeHtml(post.username)}</span>
+                        <span class="text-xs text-gray-400">${formattedDate}</span>
+                    </div>
+                    <div class="flex space-x-3 text-xs text-gray-400 text-right flex-shrink-0">
+                        <span>❤️ ${post.like_count ?? 0}</span>
+                        <span>🔁 ${post.retweet_count ?? 0}</span>
+                        ${linkIcon}
+                    </div>
+                </div>
+                <div class="mt-1">
+                    <div class="post-text text-sm leading-snug"
+                        data-original-text="${escapeHtml(post.original_text || '')}">
+                    </div>
+                </div>
+                <div class="mt-2 flex flex-wrap gap-2 items-center">
+                    ${tickerTagsHtml}
+                </div>
+                <div class="mt-1 text-right">
+                    <a href="${post.source_url || '#'}" target="_blank" class="text-xs hover:underline">元の投稿 &rarr;</a>
+                </div>
+            </div>
+            `;
+            container.insertAdjacentHTML('beforeend', postHtml);
+        });
+
+        // process new DOM
+        processPostTextDOM(state.autolinker);
+        clearSelection(state, elements);
+        trimOldPosts();
+    }
+
+    // Trim DOM to keep at most MAX_DOM_POSTS posts
+    function trimOldPosts() {
+        const container = elements.post.listContainer;
+        if (!container) return;
+        while (container.children.length > MAX_DOM_POSTS) {
+            container.removeChild(container.firstElementChild);
+        }
+    }
+
+    // Load more posts via /api/filter-posts with cursor and limit
+    async function loadMorePosts() {
+        if (isLoadingMore) return;
+        if (!nextCursor) return; // no more
+        isLoadingMore = true;
+        try {
+            // gather current filter params (reuse logic from runBtn handler)
+            const keyword = elements.filter.keywordInput.value.trim();
+            const likes = elements.filter.likesInput.value ? parseInt(elements.filter.likesInput.value, 10) : null;
+            const rts = elements.filter.rtsInput.value ? parseInt(elements.filter.rtsInput.value, 10) : null;
+            const tickerTags = document.querySelectorAll('#ticker-tags-container .ticker-tag');
+            const ticker_list = Array.from(tickerTags).map(tag => tag.dataset.value);
+            const sentiment = elements.filter.sentimentSelect.value;
+            const selectedSectors = Array.from(document.querySelectorAll('.sector-parent-cb:checked')).map(cb => cb.value);
+            const selectedSubSectors = Array.from(document.querySelectorAll('.sector-child-cb:checked')).map(cb => cb.value);
+            const selectedAccountCheckboxes = document.querySelectorAll('.account-filter-checkbox:checked');
+            const accounts = Array.from(selectedAccountCheckboxes).map(cb => cb.value);
+
+            const response = await fetch('/api/filter-posts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    keyword, accounts, likes, rts,
+                    ticker: ticker_list,
+                    sector: selectedSectors,
+                    sub_sector: selectedSubSectors,
+                    sentiment,
+                    limit: PAGE_LIMIT,
+                    cursor: nextCursor
+                })
+            });
+
+            if (!response.ok) throw new Error(`API error: ${response.statusText}`);
+            const result = await response.json();
+            if (result.status === 'success') {
+                appendPostList(result.posts);
+                nextCursor = result.next_cursor;
+                // if no more posts, you can optionally disconnect observer (handled externally)
+            } else {
+                console.warn('loadMorePosts: result.status !== success', result);
+            }
+        } catch (e) {
+            console.error('loadMorePosts failed:', e);
+        } finally {
+            isLoadingMore = false;
+        }
+    }
+
+    // sentinel を作ってコンテナの直後に配置
+    const sentinel = document.createElement('div');
+    sentinel.id = 'infinite-scroll-sentinel';
+    elements.post.listContainer.parentElement.appendChild(sentinel);
+
+    const observer = new IntersectionObserver(entries => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                // only load more if we have a cursor
+                if (nextCursor) loadMorePosts();
+            }
+        });
+    }, { root: null, rootMargin: '400px', threshold: 0.1 });
+
+    observer.observe(sentinel);    
 }
