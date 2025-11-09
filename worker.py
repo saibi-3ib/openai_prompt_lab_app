@@ -8,12 +8,8 @@ from dateutil.parser import parse
 import time
 import requests
 from sqlalchemy.exc import IntegrityError
-
-# ▼▼▼【インポート追加】OAuth 1.1a のため ▼▼▼
 from requests_oauthlib import OAuth1Session
-# ▲▲▲【インポート追加】▲▲▲
-
-from utils_db import _run_analysis_logic, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY
+from utils_db import _run_analysis_logic, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY, get_current_prompt
 
 load_dotenv()
 
@@ -162,16 +158,17 @@ def run_worker():
         else:
             try:
                 ticker_maps = db.query(StockTickerMap).all()
-                default_prompt_obj = db.query(Prompt).filter(Prompt.name == DEFAULT_PROMPT_KEY).first()
-                if not default_prompt_obj:
-                     raise Exception(f"'{DEFAULT_PROMPT_KEY}' プロンプトがDBに存在しません。")
-                
-                default_prompt_text = default_prompt_obj.template_text
+                current_prompt_obj = get_current_prompt(db)
+                if not current_prompt_obj:
+                    raise Exception("現在選択されているプロンプトが取得できません。")
+                prompt_template_text = current_prompt_obj.template_text
+                prompt_name_to_use = current_prompt_obj.name
+
                 ai_model_to_use = "gpt-4o-mini" 
                 if ai_model_to_use not in AVAILABLE_MODELS:
                     ai_model_to_use = AVAILABLE_MODELS[0]
                 
-                print(f"AI Analysis is READY. Using model: {ai_model_to_use}")
+                print(f"AI Analysis is READY. Using model: {ai_model_to_use} and prompt: {prompt_name_to_use}")
                 run_ai_analysis = True
 
             except Exception as e:
@@ -281,9 +278,9 @@ def run_worker():
                             ai_result = _run_analysis_logic(
                                 db=db,
                                 posts_to_analyze=[new_collected_post],
-                                prompt_text=default_prompt_text,
+                                prompt_text=prompt_template_text,
                                 selected_model=ai_model_to_use,
-                                selected_prompt_name=DEFAULT_PROMPT_KEY,
+                                selected_prompt_name=prompt_name_to_use,
                                 ticker_context_map=ticker_maps
                             )
                             print(f" -> AI analysis COMPLETED (Cost: ${ai_result.get('cost_usd', 0):.6f})")
