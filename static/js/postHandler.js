@@ -7,6 +7,12 @@
  * @param {object} state - app.js の共有state
  */
 function renderPostList(posts, container, state) {
+// --- renderPostList 内の注意 ---
+// renderPostList の中で .ticker-btn を作るのはそのままにして、
+// 「個別に addEventListener をつける」処理は必ず削除してください。
+// （以前のコードにinserted.querySelectorAll('.ticker-btn').forEach(...) があれば削除）
+// テンプレートで生成するボタンは class="ticker-btn" data-ticker="..." を付けておけばOKです。
+
     container.innerHTML = '';
     
     if (posts.length === 0) {
@@ -180,6 +186,45 @@ function escapeHtml(str) {
               .replace(/>/g, '&gt;')
               .replace(/\n/g, '&#10;');
 }
+
+function debounce(fn, wait) {
+    let t;
+    return function(...args) {
+        clearTimeout(t);
+        t = setTimeout(() => fn.apply(this, args), wait);
+    };
+}
+
+/**
+ * addTickerTag:
+ * 既存の ticker-tag と見た目・構造を揃えてタグを追加する。
+ * 重複は無視する。追加に成功したら true を返す。
+ */
+function addTickerTag(ticker) {
+    const tagsContainer = document.getElementById('ticker-tags-container');
+    if (!tagsContainer || !ticker) return false;
+    if (tagsContainer.querySelector(`.ticker-tag[data-value="${ticker}"]`)) return false;
+
+    // 見た目を既存タグに合わせるクラスを使う（必要なら調整）
+    const tag = document.createElement('span');
+    tag.className = 'ticker-tag inline-flex items-center gap-2 bg-gray-700 text-xs px-2 py-1 rounded';
+    tag.dataset.value = ticker;
+
+    // 内部は既存 UI に似せる (ticker と × ボタン)
+    tag.innerHTML = `${escapeHtml(ticker)} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
+    tagsContainer.appendChild(tag);
+    return true;
+}
+
+/**
+ * triggerFilter を debounce して何度も発火しないようにする
+ * （runBtn.click() をトリガーする簡易実装）
+ */
+function triggerFilter() {
+    const runBtn = elements?.filter?.runBtn || document.getElementById('filter-run-btn');
+    if (runBtn) runBtn.click();
+}
+const triggerFilterDebounced = debounce(() => triggerFilter(), 200);
 
 
 // --- メインの初期化関数 (app.js から呼ばれる) ---
@@ -372,35 +417,30 @@ export function initPostHandler(el, st) {
     // (サーバーサイドレンダリングされた投稿に対して実行)
     processPostTextDOM(state.autolinker);
 
-    // デリゲーション: ポストリスト内での ticker-btn クリック
+    // (A) ポストリスト内での ticker-btn クリックをデリゲートして処理
     elements.post.listContainer?.addEventListener('click', (e) => {
         const btn = e.target.closest('.ticker-btn');
-        if (!btn) return; // ticker-btn 以外は無視
+        if (!btn) return;
 
-        // ボタンのクリックがポスト選択に伝播しないようにする
+        // ポスト選択ハンドラに影響を与えないようにする
         e.stopPropagation();
         e.preventDefault();
 
         const ticker = btn.dataset.ticker;
         if (!ticker) return;
 
-        // ticker-tags-container に同じタグがなければ追加する
-        const tagsContainer = document.getElementById('ticker-tags-container');
-        if (tagsContainer && !tagsContainer.querySelector(`.ticker-tag[data-value="${ticker}"]`)) {
-            const tag = document.createElement('span');
-            tag.className = 'ticker-tag bg-gray-700 text-xs px-2 py-1 rounded flex items-center gap-2';
-            tag.dataset.value = ticker;
-            tag.innerHTML = `${ticker} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
-            tagsContainer.appendChild(tag);
+        // 見た目を揃えてタグを追加（重複は addTickerTag 内で判定）
+        const added = addTickerTag(ticker);
+        if (added) {
+            // タグを追加したら自動で絞り込み（debounce）
+            triggerFilterDebounced();
+        } else {
+            // 既にあれば少し揺らす等の UI フィードバックを検討（省略）
+            triggerFilterDebounced(); // 既にあっても再検索しておく
         }
-
-        // remove-tag 用のデリゲーション（ticker-tags-container に既にある前提で共通処理を設定）
-        // （ここでは即時のクリックトリガで再検索するので簡易実装）
-        const runBtn = elements.filter.runBtn || document.getElementById('filter-run-btn');
-        if (runBtn) runBtn.click();
     });
 
-// さらに、ticker-tags-container 内の × ボタン削除を委譲で処理する行を追加（init のどこかに1回だけ登録）
+    // (B) タグ領域の × 削除ボタンをデリゲーションで処理
     document.getElementById('ticker-tags-container')?.addEventListener('click', (e) => {
         const rem = e.target.closest('.remove-tag-btn');
         if (!rem) return;
@@ -408,7 +448,22 @@ export function initPostHandler(el, st) {
         e.preventDefault();
         const tag = rem.closest('.ticker-tag');
         if (tag) tag.remove();
-        const runBtn = elements.filter.runBtn || document.getElementById('filter-run-btn');
-        if (runBtn) runBtn.click();
+        triggerFilterDebounced();
+    });
+
+    // (C) 各フィルタ入力で自動で絞り込み（入力時・変更時に debounce）
+    elements.filter.keywordInput?.addEventListener('input', triggerFilterDebounced);
+    elements.filter.likesInput?.addEventListener('input', triggerFilterDebounced);
+    elements.filter.rtsInput?.addEventListener('input', triggerFilterDebounced);
+    elements.filter.sentimentSelect?.addEventListener('change', triggerFilterDebounced);
+
+    // account / sector チェックボックスの変化も監視（存在する場合）
+    document.querySelectorAll('.account-filter-checkbox').forEach(cb => cb.addEventListener('change', triggerFilterDebounced));
+    document.querySelectorAll('.sector-parent-cb, .sector-child-cb').forEach(cb => cb.addEventListener('change', triggerFilterDebounced));
+
+    // (D) 絞り込みリセットボタンやタグクリアの処理があるなら、それらにも triggerFilterDebounced をつなぐ
+    elements.filter.resetBtn?.addEventListener('click', () => {
+        // reset ボタンがフィルタ値をクリアした後に検索を実行する（小さな遅延で）
+        setTimeout(() => triggerFilterDebounced(), 50);
     });
 }
