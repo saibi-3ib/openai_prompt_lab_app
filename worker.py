@@ -10,6 +10,8 @@ import requests
 from sqlalchemy.exc import IntegrityError
 from requests_oauthlib import OAuth1Session
 from utils_db import _run_analysis_logic, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY, get_current_prompt
+from calculate_weights import recalculate_all_weights
+
 
 load_dotenv()
 
@@ -284,7 +286,16 @@ def run_worker():
                                 ticker_context_map=ticker_maps
                             )
                             print(f" -> AI analysis COMPLETED (Cost: ${ai_result.get('cost_usd', 0):.6f})")
-                        
+
+                            # 追加: この投稿により更新された total_mentions を元に
+                            # weight_ratio を再計算してターゲット管理ページに即時反映させる
+                            try:
+                                print(" -> Recalculating user ticker weight ratios...")
+                                recalculate_all_weights()
+                                print(" -> Recalculation completed.")
+                            except Exception as e:
+                                print(f" -> Failed to recalculate weights: {e}")
+
                         except Exception as ai_e:
                             print(f"!!!!!!!! AI analysis FAILED for DB ID {new_collected_post.id}: {ai_e} !!!!!!!!")
                     # --- AI分析ここまで ---
