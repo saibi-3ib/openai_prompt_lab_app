@@ -81,31 +81,9 @@ function renderPostList(posts, container, state) {
 
         container.insertAdjacentHTML('beforeend', postHtml);
 
-        // 追加: 生成した .ticker-btn に対するクリック動作をバインド（タグクリックでフィルタをセットして検索トリガ）
-        const inserted = container.querySelector(`#post-${post.id}`);
-        if (inserted) {
-            inserted.querySelectorAll('.ticker-btn').forEach(btn => {
-                btn.addEventListener('click', (ev) => {
-                    ev.stopPropagation(); // ポスト選択クリックの伝播を止める
-                    const ticker = btn.dataset.ticker;
-                    // ticker-tags-container に同じタグがなければ追加する
-                    const tagsContainer = document.getElementById('ticker-tags-container');
-                    if (tagsContainer && !tagsContainer.querySelector(`.ticker-tag[data-value="${ticker}"]`)) {
-                        const tag = document.createElement('span');
-                        tag.className = 'ticker-tag bg-gray-700 text-xs px-2 py-1 rounded flex items-center gap-2';
-                        tag.dataset.value = ticker;
-                        tag.innerHTML = `${ticker} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
-                        tagsContainer.appendChild(tag);
-                    }
-                    // 既存の「実行」ボタンをクリックしてフィルタを発動（initPostHandler 内のハンドラを活用）
-                    const runBtn = document.getElementById('filter-run-btn');
-                    if (runBtn) runBtn.click();
-                });
-            });
-        }
-        // --- 追加修正: initPostHandler の post-item クリックハンドラで、ticker-btn クリック時は選択動作を無視する ---
-        // （既存の条件に e.target.closest('.ticker-btn') の判定を追加してください）
-        // 例: if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn') || e.target.closest('.ticker-btn')) { return; }
+        // --- NOTE ---
+        // ここで個別に .ticker-btn にイベントをバインドしないでください。
+        // .ticker-btn のクリックは initPostHandler のデリゲーションで一元処理します。
     });
 
     // HTML挿入後に、テキスト処理 (Autolinker, もっと見る) を実行
@@ -221,13 +199,15 @@ export function initPostHandler(el, st) {
     state = st;
 
     // --- 1. 投稿の選択機能 ---
+    // イベントデリゲーション: 投稿アイテムのクリックハンドラ
     elements.post.listContainer?.addEventListener('click', (e) => {
         const clickedItem = e.target.closest('.post-item');
-        
-        if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn')) {
+
+        // ここでクリック元がリンク・もっと見るボタン・ティッカーボタンなら選択動作を行わない
+        if (!clickedItem || e.target.closest('a') || e.target.closest('.toggle-truncate-btn') || e.target.closest('.ticker-btn')) {
             return;
         }
-        
+
         const clickedPostId = clickedItem.dataset.postId;
         const clickedIndex = parseInt(clickedItem.dataset.index, 10);
 
@@ -391,4 +371,44 @@ export function initPostHandler(el, st) {
     // --- 4. 初期読み込み時のテキスト処理 ---
     // (サーバーサイドレンダリングされた投稿に対して実行)
     processPostTextDOM(state.autolinker);
+
+    // デリゲーション: ポストリスト内での ticker-btn クリック
+    elements.post.listContainer?.addEventListener('click', (e) => {
+        const btn = e.target.closest('.ticker-btn');
+        if (!btn) return; // ticker-btn 以外は無視
+
+        // ボタンのクリックがポスト選択に伝播しないようにする
+        e.stopPropagation();
+        e.preventDefault();
+
+        const ticker = btn.dataset.ticker;
+        if (!ticker) return;
+
+        // ticker-tags-container に同じタグがなければ追加する
+        const tagsContainer = document.getElementById('ticker-tags-container');
+        if (tagsContainer && !tagsContainer.querySelector(`.ticker-tag[data-value="${ticker}"]`)) {
+            const tag = document.createElement('span');
+            tag.className = 'ticker-tag bg-gray-700 text-xs px-2 py-1 rounded flex items-center gap-2';
+            tag.dataset.value = ticker;
+            tag.innerHTML = `${ticker} <button type="button" class="remove-tag-btn text-xs ml-2">×</button>`;
+            tagsContainer.appendChild(tag);
+        }
+
+        // remove-tag 用のデリゲーション（ticker-tags-container に既にある前提で共通処理を設定）
+        // （ここでは即時のクリックトリガで再検索するので簡易実装）
+        const runBtn = elements.filter.runBtn || document.getElementById('filter-run-btn');
+        if (runBtn) runBtn.click();
+    });
+
+// さらに、ticker-tags-container 内の × ボタン削除を委譲で処理する行を追加（init のどこかに1回だけ登録）
+    document.getElementById('ticker-tags-container')?.addEventListener('click', (e) => {
+        const rem = e.target.closest('.remove-tag-btn');
+        if (!rem) return;
+        e.stopPropagation();
+        e.preventDefault();
+        const tag = rem.closest('.ticker-tag');
+        if (tag) tag.remove();
+        const runBtn = elements.filter.runBtn || document.getElementById('filter-run-btn');
+        if (runBtn) runBtn.click();
+    });
 }
