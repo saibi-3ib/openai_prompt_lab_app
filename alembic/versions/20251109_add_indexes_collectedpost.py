@@ -1,4 +1,3 @@
-# name=alembic/versions/20251109_add_indexes_collectedpost.py url=https://github.com/saibi-3ib/openai_prompt_lab_app/blob/main/alembic/versions/20251109_add_indexes_collectedpost.py
 """Add indexes to collected_posts for filtering performance
 
 Revision ID: 20251109_add_indexes_collectedpost
@@ -16,13 +15,16 @@ branch_labels = None
 depends_on = None
 
 def upgrade():
-    # Add indexes commonly used in filtering
-    op.create_index(op.f('ix_collected_posts_username'), 'collected_posts', ['username'], unique=False)
-    op.create_index(op.f('ix_collected_posts_posted_at'), 'collected_posts', ['posted_at'], unique=False)
-    op.create_index(op.f('ix_collected_posts_like_count'), 'collected_posts', ['like_count'], unique=False)
-    # Note: ticker_sentiment.ticker already has indexes in previous migrations
+    # Use Postgres "IF NOT EXISTS" to avoid duplicate-index errors when index already present.
+    conn = op.get_bind()
+    # Create indexes if they do not already exist
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_collected_posts_username ON collected_posts (username)"))
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_collected_posts_posted_at ON collected_posts (posted_at)"))
+    conn.execute(sa.text("CREATE INDEX IF NOT EXISTS ix_collected_posts_like_count ON collected_posts (like_count)"))
+    # Note: if you need other DB-agnostic behavior, handle conditionally here.
 
 def downgrade():
-    op.drop_index(op.f('ix_collected_posts_like_count'), table_name='collected_posts')
-    op.drop_index(op.f('ix_collected_posts_posted_at'), table_name='collected_posts')
-    op.drop_index(op.f('ix_collected_posts_username'), table_name='collected_posts')
+    conn = op.get_bind()
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_collected_posts_like_count"))
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_collected_posts_posted_at"))
+    conn.execute(sa.text("DROP INDEX IF EXISTS ix_collected_posts_username"))
