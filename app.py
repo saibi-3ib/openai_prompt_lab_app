@@ -347,14 +347,10 @@ def filter_posts():
         likes = data.get('likes')
         rts = data.get('rts')
 
-        # new: limit and cursor for keyset pagination
-        limit = int(data.get('limit', 50))
-        cursor = data.get('cursor')  # expected to be last_seen_id (int) or None
-
-        ticker_list = data.get('ticker')    # array
+        ticker_list = data.get('ticker')    # (これは前回修正済み)
         sentiment = data.get('sentiment')
-        sectors = data.get('sector')
-        sub_sectors = data.get('sub_sector')
+        sectors = data.get('sector')        # (★ sector -> sectors 配列に変更)
+        sub_sectors = data.get('sub_sector') # (★ sub_sector -> sub_sectors 配列に変更)
 
         query = db.query(CollectedPost)
 
@@ -363,11 +359,14 @@ def filter_posts():
         if accounts:
             query = query.filter(CollectedPost.username.in_(accounts))
         
-        # センチメントまたはティッカーでの絞り込み
+       # センチメントまたはティッカーでの絞り込み
         if ticker_list or sentiment:
             query = query.join(TickerSentiment, CollectedPost.id == TickerSentiment.collected_post_id)
+            
             if ticker_list:
+                # (★ ilike ではなく 'in_' を使って配列で検索)
                 query = query.filter(TickerSentiment.ticker.in_(ticker_list))
+            
             if sentiment:
                 query = query.filter(TickerSentiment.sentiment == sentiment)
 
@@ -375,12 +374,16 @@ def filter_posts():
         if sectors or sub_sectors:
             if not (ticker_list or sentiment):
                  query = query.join(TickerSentiment, CollectedPost.id == TickerSentiment.collected_post_id)
+            
             query = query.join(StockTickerMap, TickerSentiment.ticker == StockTickerMap.ticker)
+            
+            # (★ OR条件で絞り込み。sectors配列かsub_sectors配列の *いずれか* に一致)
             filters = []
             if sectors:
                 filters.append(StockTickerMap.gics_sector.in_(sectors))
             if sub_sectors:
                 filters.append(StockTickerMap.gics_sub_industry.in_(sub_sectors))
+            
             if filters:
                 from sqlalchemy import or_
                 query = query.filter(or_(*filters))
@@ -398,25 +401,14 @@ def filter_posts():
                     query = query.filter(CollectedPost.retweet_count >= rts_int)
             except ValueError: pass
 
-        # KEYSET pagination: assume ordering by id desc (newest first)
-        query = query.order_by(CollectedPost.id.desc())
-
-        if cursor:
-            try:
-                last_id = int(cursor)
-                # Only fetch posts with id < last_id so we get older posts
-                query = query.filter(CollectedPost.id < last_id)
-            except ValueError:
-                pass
-
-        filtered_posts = query.limit(limit).all()
+        filtered_posts = query.order_by(CollectedPost.id.desc()).all()
 
         results_list = []
         for post in filtered_posts:
-            # include ticker_sentiments so client can render tags
-            ticker_list_for_post = []
+            # ticker_sentiments を API に含める（各要素は {ticker, sentiment}）
+            ticker_list = []
             for ts in getattr(post, "ticker_sentiments", []):
-                ticker_list_for_post.append({
+                ticker_list.append({
                     "ticker": ts.ticker,
                     "sentiment": ts.sentiment
                 })
@@ -430,19 +422,13 @@ def filter_posts():
                 "like_count": post.like_count,
                 "retweet_count": post.retweet_count,
                 "link_summary": post.link_summary,
-                "ticker_sentiments": ticker_list_for_post
+                "ticker_sentiments": ticker_list
             })
-
-        # compute next_cursor (last element id) for client to pass next time
-        next_cursor = None
-        if filtered_posts:
-            next_cursor = filtered_posts[-1].id
 
         return jsonify({
             "status": "success",
             "count": len(results_list),
-            "posts": results_list,
-            "next_cursor": next_cursor
+            "posts": results_list
         })
     except Exception as e:
         db.rollback()
