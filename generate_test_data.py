@@ -3,7 +3,7 @@
 import random
 import argparse
 from datetime import datetime, timezone, timedelta
-from models import SessionLocal, CollectedPost, TickerSentiment, TargetAccount, StockTickerMap
+from models import SessionLocal, CollectedPost, TickerSentiment, TargetAccount, StockTickerMap, Prompt, AnalysisResult
 import string
 
 SAMPLE_TICKERS = ['AAPL','TSLA','MSFT','AMZN','GOOG','FB','NFLX','NVDA','INTC','AMD','BABA','FOX']
@@ -31,6 +31,24 @@ def generate(count):
                 db.add(TargetAccount(username=u, provider='X'))
         db.commit()
 
+        # --- 新規: テスト用の Prompt がなければ作成し、ダミーの AnalysisResult を作成して ID を使う ---
+        prompt = db.query(Prompt).first()
+        if not prompt:
+            # Prompt テーブルの必須カラムに合わせて適宜設定
+            prompt = Prompt(name='__test_prompt__', template_text='Test prompt template')
+            db.add(prompt)
+            db.commit()
+
+        # Create a single dummy AnalysisResult to attach sentiments to (avoid NOT NULL FK issues)
+        dummy_result = AnalysisResult(
+            prompt_id=prompt.id,
+            raw_json_response='{"test": true}',
+            extracted_summary='dummy'
+        )
+        db.add(dummy_result)
+        db.commit()
+        dummy_result_id = dummy_result.id
+
         # start inserting
         now = datetime.now(timezone.utc)
         added = 0
@@ -50,11 +68,11 @@ def generate(count):
             db.add(post)
             db.flush()  # get id
 
-            # add 0-3 ticker sentiments for this post
+            # add 0-3 ticker sentiments for this post, linking to dummy_result_id
             for _ in range(random.randint(0,3)):
                 t = random.choice(SAMPLE_TICKERS)
                 ts = TickerSentiment(
-                    analysis_result_id = None,
+                    analysis_result_id = dummy_result_id,
                     collected_post_id = post.id,
                     ticker = t,
                     sentiment = random.choice(['Positive','Negative','Neutral']),
