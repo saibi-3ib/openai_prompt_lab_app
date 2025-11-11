@@ -18,7 +18,6 @@ if not all([DB_USER, DB_PASSWORD, DB_NAME]):
     raise ValueError("データベース接続情報 (DB_USER, DB_PASSWORD, DB_NAME) が .env ファイルに設定されていません。")
 
 DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-print(f"--- [models.py] Connecting to PostgreSQL database at: {DB_HOST}:{DB_PORT}/{DB_NAME} ---")
 
 engine = create_engine(DATABASE_URL)
 
