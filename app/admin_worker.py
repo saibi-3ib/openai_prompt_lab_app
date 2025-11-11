@@ -7,6 +7,7 @@ This blueprint expects:
 - ADMIN_USERS (optional) env var as comma-separated admin usernames if User model lacks is_admin
 """
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, abort
+from run import limiter
 from flask_login import login_required, current_user
 import os
 import sys
@@ -86,6 +87,7 @@ def require_admin_or_abort():
 
 
 @admin_bp.route("/admin/worker", methods=["GET", "POST"])
+@limiter.limit("30 per hour")  # 試行回数制限(1時間あたり30回)
 @login_required
 def worker_settings():
     # ensure admin

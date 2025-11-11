@@ -11,25 +11,65 @@ from dateutil.parser import parse
 import io
 from dotenv import load_dotenv
 
-# --- (変更) モデル定義とDB接続を models から持ってくる ---
+# --- モデル定義とDB接続を models から持ってくる ---
 from models import (
     SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, User, 
     TickerSentiment, StockTickerMap, TargetAccount, UserTickerWeight
 )
 from datetime import datetime, timezone
 
-# --- ▼▼▼【新規】ロジックのインポート ▼▼▼ ---
 from utils_parser import parse_threads_data_from_lines
 from utils_db import (
     get_current_provider, get_or_create_credit_setting, get_current_prompt,
     run_batch_analysis, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY
 )
 
-from flask_wtf import CSRFProtect
-# --- ▲▲▲ インポートここまで ▲▲▲ ---
-
 load_dotenv()
 app = Flask(__name__)
+
+# --- セキュリティ関連ミドルウェアの設定 ---
+from flask_wtf import CSRFProtect
+from flask_talisman import Talisman
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+from flask_login import current_user
+
+# セッション cookie の安全設定（本番では True）
+app.config.setdefault("SESSION_COOKIE_SECURE", not app.debug)  # 本番では True
+app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+
+# Content-Security-Policy の例（アプリで使う外部リソースに合わせて調整してください）
+csp = {
+    "default-src": ["'self'"],
+    "script-src": ["'self'", "https://cdn.tailwindcss.com"],
+    "style-src": ["'self'", "https://cdn.tailwindcss.com", "'unsafe-inline'"],
+    "img-src": ["'self'", "data:"],
+}
+
+# Talisman 初期化
+# - 開発中は force_https=False にしておくとローカルでの HTTP テストを妨げません
+# - 本番は force_https=True, strict_transport_security=True にすること（Render 等で TLS を有効に）
+if app.debug:
+    Talisman(app, content_security_policy=csp, force_https=False)
+else:
+    Talisman(app, content_security_policy=csp, force_https=True, strict_transport_security=True)
+
+# key_func: ログイン済みならユーザID単位、そうでなければリモートIP単位で制限
+def rate_limit_key():
+    try:
+        if getattr(current_user, "is_authenticated", False):
+            return f"user:{current_user.get_id()}"
+    except Exception:
+        pass
+    return get_remote_address()
+
+# Limiter の初期化（アプリ全体のデフォルト制限を設定）
+limiter = Limiter(
+    app,
+    key_func=rate_limit_key,
+    default_limits=["200 per day", "50 per hour"],  # 必要に応じて調整
+)
 
 # ensure you have a SECRET_KEY set in env or config
 app.config.setdefault("SECRET_KEY", os.environ.get("SECRET_KEY", "change-me-locally"))
@@ -692,6 +732,7 @@ def history():
         db.close()
 
 # --- ▼▼▼【以下を追加: ログイン/ログアウト ルート】▼▼▼ ---
+@limiter.limit("10 per minute") # ログイン試行のレート制限(10回/分)
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     # 既にログイン済みの場合はダッシュボードへリダイレクト
