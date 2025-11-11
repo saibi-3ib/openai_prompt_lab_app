@@ -9,7 +9,6 @@
   <p>Worker status: <strong>{{ status }}</strong>{% if pid %} (pid: {{ pid }}){% endif %}</p>
 
   <form method="post">
-    <!-- CSRF token (Flask-WTF CSRFProtect) -->
     {{ csrf_token() }}
     <input type="hidden" name="action" value="start_worker">
     <p>

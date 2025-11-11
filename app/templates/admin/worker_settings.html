@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>Admin — Worker Control</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+  <div style="max-width:900px;margin:2rem auto;padding:1rem;">
+    <h1>Worker Control</h1>
+    <p>Worker status: <strong>{{ status }}</strong>{% if pid %} (pid: {{ pid }}){% endif %}</p>
+
+    <form method="post">
+      {{ csrf_token() }}
+      <input type="hidden" name="action" value="start_worker">
+      <p>
+        <label>
+          Confirmation phrase (type: <code>{{ required_phrase }}</code>)<br>
+          <input type="text" name="confirm_phrase" required style="width:100%;padding:0.5rem;">
+        </label>
+      </p>
+      <p>
+        <button type="submit" style="padding:0.5rem 1rem;">Start Worker (run once and seed test data)</button>
+      </p>
+    </form>
+
+    <form method="post" style="margin-top:1rem;">
+      {{ csrf_token() }}
+      <input type="hidden" name="action" value="stop_worker">
+      <p><button type="submit" style="padding:0.5rem 1rem;">Stop Worker</button></p>
+    </form>
+
+    <h2>Logs</h2>
+    <p>Log file: {{ log_file }}</p>
+    <p>
+      You can view the worker log file on the server (logs/worker_run.log) or configure a log viewer in admin UI.
+    </p>
+  </div>
+</body>
+</html>

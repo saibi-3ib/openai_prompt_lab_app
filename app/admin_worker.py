@@ -1,5 +1,11 @@
-"""Admin blueprint to manually run worker.py with security checks, CSRF and logging."""
+"""Admin blueprint to manually run worker.py with security checks, CSRF and logging.
 
+This blueprint expects:
+- Flask-WTF CSRFProtect initialized in your app (app.py / run.py)
+- Flask-Login login manager initialized
+- WORKER_CONFIRM_PHRASE or default "RUN_WORKER" in config/env
+- ADMIN_USERS (optional) env var as comma-separated admin usernames if User model lacks is_admin
+"""
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, abort
 from flask_login import login_required, current_user
 import os
@@ -18,7 +24,7 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "worker_run.log"
 ADMIN_ACTION_LOG = LOG_DIR / "admin_actions.log"
 
-# Setup logger for admin actions (app-level logging may already exist; this is supplemental)
+# Setup logger for admin actions
 logger = logging.getLogger("admin_worker")
 if not logger.handlers:
     handler = logging.FileHandler(str(ADMIN_ACTION_LOG))
@@ -47,9 +53,36 @@ def is_worker_running() -> bool:
 
 
 def require_admin_or_abort():
-    # Replace this check with your project's admin check if different
-    if not (current_user and getattr(current_user, "is_authenticated", False) and getattr(current_user, "is_admin", False)):
+    """Ensure current_user is admin.
+    Strategy:
+      1) If current_user has attribute `is_admin`, use it.
+      2) Else, check app config 'ADMIN_USERS' (list) or ENV 'ADMIN_USERS' (comma-separated).
+      3) Else, deny (abort 403).
+    """
+    # must be authenticated
+    if not (current_user and getattr(current_user, "is_authenticated", False)):
+        logger.warning("Unauthorized access attempt: not authenticated")
         abort(403)
+
+    # 1) Prefer model attribute if present
+    if hasattr(current_user, "is_admin"):
+        if getattr(current_user, "is_admin"):
+            return
+        else:
+            logger.warning("Forbidden: authenticated user not admin (user=%s)", getattr(current_user, "id", None))
+            abort(403)
+
+    # 2) Fallback: config or ENV list of admin usernames
+    admin_users = current_app.config.get("ADMIN_USERS")
+    if not admin_users:
+        admin_env = os.environ.get("ADMIN_USERS", "")
+        admin_users = [u.strip() for u in admin_env.split(",") if u.strip()]
+    if admin_users and getattr(current_user, "username", None) in admin_users:
+        return
+
+    # 3) No admin signal found -> forbid
+    logger.warning("Forbidden: no admin flag and username not in ADMIN_USERS (user=%s)", getattr(current_user, "username", None))
+    abort(403)
 
 
 @admin_bp.route("/admin/worker", methods=["GET", "POST"])
@@ -66,7 +99,7 @@ def worker_settings():
         pid = None
 
     if request.method == "POST":
-        # CSRF is enforced by Flask-WTF CSRFProtect globally (see app init)
+        # CSRF is enforced by Flask-WTF CSRFProtect globally (see run.py / app init)
         action = request.form.get("action")
         confirm_phrase = request.form.get("confirm_phrase", "").strip()
         required_phrase = current_app.config.get("WORKER_CONFIRM_PHRASE", "RUN_WORKER")
@@ -123,5 +156,5 @@ def worker_settings():
                 logger.exception("Failed to stop worker (user=%s): %s", getattr(current_user, "id", None), e)
             return redirect(url_for(".worker_settings"))
 
-    # Render GET: create ephemeral csrf token is handled by Flask-WTF; template should include {{ csrf_token() }}
+    # Render GET: CSRF token injected via Flask-WTF; template should include {{ csrf_token() }}
     return render_template("admin/worker_settings.html", status=status, pid=pid, log_file=str(LOG_FILE), required_phrase=current_app.config.get("WORKER_CONFIRM_PHRASE", "RUN_WORKER"))
