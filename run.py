@@ -24,10 +24,33 @@ from utils_db import (
     get_current_provider, get_or_create_credit_setting, get_current_prompt,
     run_batch_analysis, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY
 )
+
+from flask_wtf import CSRFProtect
 # --- ▲▲▲ インポートここまで ▲▲▲ ---
 
 load_dotenv()
 app = Flask(__name__)
+
+# ensure you have a SECRET_KEY set in env or config
+app.config.setdefault("SECRET_KEY", os.environ.get("SECRET_KEY", "change-me-locally"))
+# Session cookie security (set True in production with HTTPS)
+app.config.setdefault("SESSION_COOKIE_SECURE", True)        # ensure HTTPS in prod
+app.config.setdefault("SESSION_COOKIE_HTTPONLY", True)
+app.config.setdefault("SESSION_COOKIE_SAMESITE", "Lax")
+
+# Confirmation phrase for admin actions (set in Render env vars)
+app.config.setdefault("WORKER_CONFIRM_PHRASE", os.environ.get("WORKER_CONFIRM_PHRASE", "RUN_WORKER"))
+# ALLOW_DB_RESET left off by default; only set to "1" if you allow destructive resets
+app.config.setdefault("ALLOW_DB_RESET", os.environ.get("ALLOW_DB_RESET", "0"))
+
+# init CSRF protection
+csrf = CSRFProtect()
+csrf.init_app(app)
+
+# register the admin blueprint (adjust import path if different)
+from app.admin_worker import admin_bp as admin_worker_bp
+app.register_blueprint(admin_worker_bp)
+# --- end patch ---
 
 # .env ファイルに FLASK_SECRET_KEY を必ず設定するようにします
 # (os.urandom() はサーバー再起動のたびにキーが変わり、セッションが切れるため非推奨)
