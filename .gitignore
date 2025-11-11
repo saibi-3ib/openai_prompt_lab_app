@@ -17,3 +17,4 @@ env/
 local_database.db
 
 admin_actions.log
+logs/worker_run.log
