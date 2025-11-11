@@ -25,6 +25,7 @@
         <div class="bg-gray-800 rounded-lg shadow-xl p-6 mb-8 border border-gray-700">
             <h2 class="text-xl font-semibold mb-4 text-blue-400">Worker APIプロバイダー切り替え</h2>
             <form method="POST" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="space-y-2">
                     <label class="block text-gray-400">現在: 
                         <span class="font-bold text-lg text-white">{{ current_provider }}</span></label>
@@ -56,6 +57,7 @@
                 OpenAI APIの残クレジット総額（USD）を設定します。現在の残高は、分析実行時に消費されます。
             </p>
             <form method="POST" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="space-y-2">
                     <label for="credit-amount" class="block text-gray-400">現在の残高 (USD)</label>
                     <input type="number" step="0.000001" min="0" name="credit_amount" id="credit-amount" 
@@ -75,6 +77,7 @@
                 保存済みのプロンプト一覧から、Worker が実行時に使うプロンプトを選択します。選択は即時反映されます。
             </p>
             <form method="POST" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div class="space-y-2">
                     <label for="selected-prompt" class="block text-gray-400">プロンプト一覧</label>
                     <select id="selected-prompt" name="selected_prompt" class="w-full p-2 bg-gray-900 border border-gray-700 rounded text-white">
@@ -112,6 +115,7 @@
                 `post_id` (本文や日時から生成) が重複する投稿は自動的にスキップされます。
             </p>
             <form method="POST" enctype="multipart/form-data" class="space-y-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <div>
                     <label for="jsonl_file" class="block text-gray-400 mb-2">生テキスト (.txt) ファイルを選択</label>
                     <input type="file" name="jsonl_file" id="jsonl_file"

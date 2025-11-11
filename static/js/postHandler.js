@@ -260,7 +260,10 @@ async function loadMorePosts() {
 
         const response = await fetch('/api/filter-posts', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': window.CSRF_TOKEN || ''
+            },
             body: JSON.stringify({
                 keyword, accounts, likes, rts,
                 ticker: ticker_list,
@@ -463,7 +466,10 @@ export function initPostHandler(el, st) {
         try {
             const response = await fetch('/api/filter-posts', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': window.CSRF_TOKEN || ''
+                },
                 body: JSON.stringify({
                     keyword, accounts, likes, rts,
                     ticker: ticker_list,

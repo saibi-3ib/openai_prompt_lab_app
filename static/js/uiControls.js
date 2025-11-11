@@ -105,7 +105,10 @@ function setupAutocomplete(elements) {
             try {
                 const response = await fetch(`/api/suggest`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': window.CSRF_TOKEN || ''
+                    },
                     body: JSON.stringify({ type: 'ticker', q: query })
                 });
                 

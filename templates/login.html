@@ -33,6 +33,7 @@
         {% endwith %}
 
         <form method="POST">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="mb-4">
                 <label for="username" class="block text-sm font-medium text-gray-400 mb-1">ユーザー名</label>
                 <input type="text" id="username" name="username" required>

@@ -165,8 +165,8 @@
                         {% if post.ticker_sentiments %}
                             {% for ts in post.ticker_sentiments %}
                                 {% set icon = '➖️' %}
-                                {% if ts.sentiment == 'Positive' %}{% set icon = '⭕️' %}
-                                {% elif ts.sentiment == 'Negative' %}{% set icon = '✘' %}{% endif %}
+                                {% if ts.sentiment == 'Positive' %}{% set icon = '✅️' %}
+                                {% elif ts.sentiment == 'Negative' %}{% set icon = '❌️' %}{% endif %}
                                 <button type="button" class="ticker-btn text-xs px-2 py-1 rounded bg-gray-800 hover:bg-gray-700 border text-white"
                                         data-ticker="{{ ts.ticker }}">
                                     <span class="font-semibold mr-1">{{ ts.ticker }}</span>

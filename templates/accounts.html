@@ -88,7 +88,8 @@
 
         <div class="card">
             <h2 class="text-xl font-semibold mb-4 text-blue-400">新しいアカウントの追加</h2>
-            <form method="POST" action="{{ url_for('accounts') }}" class="flex items-end space-x-4">
+            <form method="POST" action="/accounts" class="flex items-end space-x-4">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                 <input type="hidden" name="action" value="add_account">
                 <div>
                     <label for="username" class="block text-sm font-medium text-gray-400 mb-1">X アカウント名 (例: elonmusk)</label>
@@ -126,7 +127,8 @@
                             <td class="font-bold text-white">{{ account.username }}</td>
                             <td><span class="tag">{{ account.provider }}</span></td>
                             <td>
-                                <form method="POST" action="{{ url_for('accounts') }}" style="display: inline-block;">
+                               <form method="POST" action="{{ url_for('accounts') }}" style="display: inline-block;">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <input type="hidden" name="action" value="toggle_active">
                                     <input type="hidden" name="account_id" value="{{ account.id }}">
                                     {% if account.is_active %}
@@ -147,10 +149,11 @@
                                 <span class="text-xs text-gray-500 italic">N/A</span>
                             </td>
                             <td>
-                                <form method="POST" action="{{ url_for('accounts') }}" style="display: inline-block;" onsubmit="return confirm('本当に「{{ account.username }}」を削除しますか？\n(関連する重みデータも削除されますが、収集した投稿は残ります)');">
+                                <form method="POST" action="{{ url_for('accounts') }}" style="display: inline-block;" onsubmit="return confirm('本当に「{{ account.username }}」を削除しますか？');">
+                                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                                     <input type="hidden" name="action" value="delete_account">
                                     <input type="hidden" name="account_id" value="{{ account.id }}">
-                                    <button type="submit" class="btn btn-red text-xs py-1 px-2">削除</Lbutton>
+                                    <button type="submit" class="btn btn-red text-xs py-1 px-2">削除</button>
                                 </form>
                             </td>
                         </tr>

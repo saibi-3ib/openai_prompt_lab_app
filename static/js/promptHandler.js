@@ -1,5 +1,4 @@
 // --- メインの初期化関数 (app.js から呼ばれる) ---
-
 // (★) グローバルスコープで elements と state を保持 (コールバック関数で使うため)
 let elements;
 let state;
@@ -94,7 +93,10 @@ async function handleSavePrompt() {
     try {
         const response = await fetch('/api/save-prompt', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': window.CSRF_TOKEN || ''
+            },
             body: JSON.stringify({
                 promptId: selectedId,
                 templateText: editorText
@@ -140,7 +142,10 @@ async function handleDeletePrompt() {
     try {
         const response = await fetch('/api/delete-prompt', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': window.CSRF_TOKEN || ''
+            },
             body: JSON.stringify({ promptId: selectedId })
         });
 
@@ -181,7 +186,10 @@ async function handleSaveAsNewPrompt() {
     try {
         const response = await fetch('/api/save-prompt', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: { 
+                'Content-Type': 'application/json',
+                'X-CSRFToken': window.CSRF_TOKEN || ''
+            },
             body: JSON.stringify({
                 promptId: null, // ID: null = 新規
                 templateText: editorText,

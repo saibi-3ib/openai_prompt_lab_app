@@ -23,3 +23,9 @@
     </div>
   </div>
 </nav>
+
+<script>
+  // JSから使うための CSRF トークンをグローバルにセット
+  // これを _nav.html に一回だけ入れておけば全ページで使えます
+  window.CSRF_TOKEN = "{{ csrf_token() }}";
+</script>
