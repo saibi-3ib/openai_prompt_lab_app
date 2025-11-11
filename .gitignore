@@ -15,3 +15,5 @@ env/
 .env
 .DS_Store
 local_database.db
+
+admin_actions.log
