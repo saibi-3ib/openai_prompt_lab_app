@@ -7,7 +7,6 @@ This blueprint expects:
 - ADMIN_USERS (optional) env var as comma-separated admin usernames if User model lacks is_admin
 """
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, abort
-from app.security import init_security
 from flask_login import login_required, current_user
 import os
 import sys
@@ -16,8 +15,8 @@ from pathlib import Path
 import time
 import logging
 
-limiter = init_security(current_app)  # avoid circular import by initializing here
 admin_bp = Blueprint("admin_worker", __name__, template_folder="templates")
+
 
 # Paths for PID / logs (adjust if needed)
 PID_FILE = Path("/tmp/worker_runner.pid")
@@ -87,8 +86,12 @@ def require_admin_or_abort():
     abort(403)
 
 
+def get_limiter():
+    """Return limiter instance from app extensions (call only inside request/app context)."""
+    return current_app.extensions.get("limiter")
+
+
 @admin_bp.route("/admin/worker", methods=["GET", "POST"])
-@limiter.limit("30 per hour")  # 試行回数制限(1時間あたり30回)
 @login_required
 def worker_settings():
     # ensure admin
