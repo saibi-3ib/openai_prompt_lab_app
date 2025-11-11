@@ -7,7 +7,7 @@ This blueprint expects:
 - ADMIN_USERS (optional) env var as comma-separated admin usernames if User model lacks is_admin
 """
 from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, abort
-from run import limiter
+from app.security import init_security
 from flask_login import login_required, current_user
 import os
 import sys
@@ -16,6 +16,7 @@ from pathlib import Path
 import time
 import logging
 
+limiter = init_security(current_app)  # avoid circular import by initializing here
 admin_bp = Blueprint("admin_worker", __name__, template_folder="templates")
 
 # Paths for PID / logs (adjust if needed)

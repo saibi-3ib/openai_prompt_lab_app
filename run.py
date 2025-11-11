@@ -33,6 +33,7 @@ from flask_talisman import Talisman
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
 from flask_login import current_user
+from app.security import init_security
 
 # セッション cookie の安全設定（本番では True）
 app.config.setdefault("SESSION_COOKIE_SECURE", not app.debug)  # 本番では True
@@ -65,11 +66,9 @@ def rate_limit_key():
     return get_remote_address()
 
 # Limiter の初期化（アプリ全体のデフォルト制限を設定）
-limiter = Limiter(
-    app,
-    key_func=rate_limit_key,
-    default_limits=["200 per day", "50 per hour"],  # 必要に応じて調整
-)
+# 以降、limiter を @limiter.limit で使える（同じモジュール内）か、
+# 他のモジュールから app.extensions['limiter'] 経由で参照できます。
+limiter = init_security(app)
 
 # ensure you have a SECRET_KEY set in env or config
 app.config.setdefault("SECRET_KEY", os.environ.get("SECRET_KEY", "change-me-locally"))
