@@ -15,8 +15,8 @@ def create_app(config_name=None):
     migrate.init_app(app, db)
     csrf.init_app(app)
 
-    # Limiter storage: pass storage_uri via init_app for compatibility
-    limiter.init_app(app, storage_uri=app.config.get("RATELIMIT_STORAGE_URI"))
+    # Limiter: initialize without storage_uri kwarg (use app.config['RATELIMIT_STORAGE_URI'])
+    limiter.init_app(app)
 
     # Server-side sessions (optional)
     if app.config.get("SESSION_TYPE") == "redis":
