@@ -40,25 +40,25 @@ def create_app(config_name=None):
     try:
         from .blueprints.auth import auth_bp
         app.register_blueprint(auth_bp)
-    except Exception:
-        app.logger.debug("auth blueprint not registered yet")
+    except Exception as e:
+        app.logger.exception("auth blueprint import failed: %s", e)
 
     try:
         from .blueprints.main import main_bp
         app.register_blueprint(main_bp)
-    except Exception:
-        app.logger.debug("main blueprint not registered yet")
+    except Exception as e:
+        app.logger.exception("main blueprint import failed: %s", e)
 
     try:
         from .blueprints.api import api_bp
         app.register_blueprint(api_bp, url_prefix="/api")
-    except Exception:
-        app.logger.debug("api blueprint not registered yet")
+    except Exception as e:
+        app.logger.exception("api blueprint import failed: %s", e)
 
     try:
         from .blueprints.admin import admin_bp
         app.register_blueprint(admin_bp, url_prefix="/admin")
-    except Exception:
-        app.logger.debug("admin blueprint not registered yet")
+    except Exception as e:
+        app.logger.exception("admin blueprint import failed: %s", e)
 
     return app
