@@ -15,6 +15,22 @@ def create_app(config_name=None):
     migrate.init_app(app, db)
     csrf.init_app(app)
 
+    # Initialize LoginManager and register user_loader
+    login_manager.init_app(app)
+    login_manager.login_view = "auth.login"
+    login_manager.login_message = "このページにアクセスするにはログインが必要です。"
+
+    @login_manager.user_loader
+    def load_user(user_id):
+        try:
+            # import here to avoid circular imports
+            from .models import User
+            # SQLAlchemy 2.0: use Session.get
+            return db.session.get(User, int(user_id))
+        except Exception:
+            current_app.logger.exception("Failed to load user id=%s", user_id)
+            return None
+
     # Limiter: initialize without storage_uri kwarg (use app.config['RATELIMIT_STORAGE_URI'])
     limiter.init_app(app)
 
@@ -31,10 +47,6 @@ def create_app(config_name=None):
     # Talisman (CSP) - respects DISABLE_FORCE_HTTPS flag
     talisman.init_app(app, content_security_policy=app.config.get("CSP", None),
                       force_https=not app.config.get("DISABLE_FORCE_HTTPS", False))
-
-    # Login manager config
-    login_manager.login_view = "auth.login"
-    login_manager.login_message = "このページにアクセスするにはログインが必要です。"
 
     # Blueprint registration hooks: import if present; avoid hard failure
     try:
