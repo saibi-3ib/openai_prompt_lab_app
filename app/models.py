@@ -13,6 +13,9 @@ from typing import Optional
 
 from werkzeug.security import generate_password_hash, check_password_hash
 from flask import current_app
+from flask_login import UserMixin
+
+
 
 from app.extensions import db
 
@@ -78,7 +81,7 @@ class TargetAccount(db.Model):
         return f"<TargetAccount id={self.id} provider={self.provider} username={self.username}>"
 
 
-class User(db.Model):
+class User(UserMixin, db.Model):
     __tablename__ = "users"
 
     id = db.Column(db.Integer, primary_key=True)
@@ -96,6 +99,9 @@ class User(db.Model):
         if not self.password_hash:
             return False
         return check_password_hash(self.password_hash, password)
+
+    # UserMixin が is_authenticated / is_active / is_anonymous / get_id を提供します。
+    # 追加でヘルパーが欲しければここに実装できます。
 
     def __repr__(self) -> str:
         return f"<User {self.username}>"
