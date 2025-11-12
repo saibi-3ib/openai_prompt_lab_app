@@ -11,7 +11,18 @@ from sqlalchemy.exc import IntegrityError
 from requests_oauthlib import OAuth1Session
 from utils_db import _run_analysis_logic, AVAILABLE_MODELS, client_openai, DEFAULT_PROMPT_KEY, get_current_prompt
 from calculate_weights import recalculate_all_weights
+import logging
+import sys
 
+root_logger = logging.getLogger()
+if not any(isinstance(h, logging.StreamHandler) for h in root_logger.handlers):
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.INFO)
+    formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
+    sh.setFormatter(formatter)
+    root_logger.addHandler(sh)
+# Optional: also set basicConfig so modules calling logging.info() work
+logging.basicConfig(level=logging.INFO, handlers=root_logger.handlers)
 
 load_dotenv()
 

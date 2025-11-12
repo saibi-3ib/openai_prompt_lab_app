@@ -34,6 +34,12 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
+if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(formatter)  # 上で作った formatter を使うか再定義
+    logger.addHandler(sh)
+
 
 def is_worker_running() -> bool:
     if not PID_FILE.exists():
