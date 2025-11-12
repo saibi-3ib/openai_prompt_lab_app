@@ -2,7 +2,7 @@ import os
 import json
 from dotenv import load_dotenv
 # import tweepy # (★) tweepy は使わない
-from models import SessionLocal, CollectedPost, Setting, StockTickerMap, Prompt, TargetAccount
+from app.models import SessionLocal, CollectedPost, Setting, StockTickerMap, Prompt, TargetAccount
 from datetime import datetime, timezone
 from dateutil.parser import parse
 import time
