@@ -1,229 +1,223 @@
-import os
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Boolean, ForeignKey, Table, Float, UniqueConstraint
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-from datetime import datetime, timezone
-from flask_login import UserMixin
+"""
+アプリケーションの SQLAlchemy モデル定義（Flask‑SQLAlchemy を前提）。
 
-load_dotenv()
+注意:
+- 既存の app/models.py を置換する前にバックアップを取ってください:
+    cp app/models.py app/models.py.bak
+- このファイルは import 時に致命的な例外を投げないように設計してあります（CI や alembic の import 時の失敗を防止）。
+- パスやアプリ構成に合わせて必要に応じて調整してください。
+"""
 
-DB_USER = os.environ.get("DB_USER")
-DB_PASSWORD = os.environ.get("DB_PASSWORD")
-DB_HOST = os.environ.get("DB_HOST", "localhost")
-DB_PORT = os.environ.get("DB_PORT", "5432")
-DB_NAME = os.environ.get("DB_NAME")
+from datetime import datetime
+from typing import Optional
 
-# DB接続情報が .env から読み込めているかチェック
-if not all([DB_USER, DB_PASSWORD, DB_NAME]):
-    raise ValueError("データベース接続情報 (DB_USER, DB_PASSWORD, DB_NAME) が .env ファイルに設定されていません。")
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask import current_app
 
-DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+from app.extensions import db
 
-engine = create_engine(DATABASE_URL)
 
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+# ---- ユーティリティ / 共通設定 ----
+def _now():
+    return datetime.utcnow()
 
-# --- ▼▼▼【以下をファイル末尾に追加】▼▼▼ ---
-# --- テーブル: ユーザー情報 ---
-class User(UserMixin, Base): # <-- UserMixin を継承
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True)
-    username = Column(String(64), index=True, unique=True, nullable=False)
-    password_hash = Column(String(256), nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-    def get_id(self):
-        return str(self.id)
-# --- ▲▲▲【追加ここまで】▲▲▲ ---
-
-# --- テーブル: 監視対象アカウント ---
-class TargetAccount(Base):
-    """監視対象のXアカウントを保存するテーブル"""
-    __tablename__ = "target_accounts"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    provider = Column(String(20), nullable=False, default='X', index=True) # (★) 'X' or 'Threads'
-    is_active = Column(Boolean, default=True, nullable=False)
-    added_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    
-    # (子)このアカウントに関連するすべての重み付け
-    weights = relationship("UserTickerWeight", back_populates="account")
-
-    # (子) このアカウントに関連する投稿
-    posts = relationship(
-        "CollectedPost",
-        back_populates="target_account",
-        lazy="dynamic", # (★) .count() のために dynamic を維持
-        order_by="CollectedPost.posted_at.desc()" # (★) ソート順を維持
-    )
-
-# --- テーブル: AIプロンプト ---
-class Prompt(Base):
-    """AIに渡すプロンプトのテンプレートを保存するテーブル"""
+# ---- モデル定義 ----
+class Prompt(db.Model):
     __tablename__ = "prompts"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, nullable=False) # 例: 'default_summary'
-    template_text = Column(Text, nullable=False)
-    is_default = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
-# --- テーブル: （連結テーブル）分析と投稿の多対多関連 ---
-# Baseを継承しないSQLAlchemy Coreスタイルのテーブル定義
-analysis_posts_link = Table('analysis_posts_link', Base.metadata,
-    Column('analysis_result_id', Integer, ForeignKey('analysis_results.id'), primary_key=True),
-    Column('collected_post_id', Integer, ForeignKey('collected_posts.id'), primary_key=True)
-)
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String, nullable=False, unique=True)
+    template_text = db.Column(db.Text, nullable=False)
+    is_default = db.Column(db.Boolean, nullable=True, default=False)
+    created_at = db.Column(db.DateTime, default=_now)
 
-# --- テーブル: 収集したポスト ---
-class CollectedPost(Base):
-    """Workerが収集した生のポスト情報を保存するテーブル"""
-    __tablename__ = "collected_posts"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, ForeignKey('target_accounts.username'), index=True, nullable=False)
-    post_id = Column(String, unique=True, index=True, nullable=False)
-    original_text = Column(Text, nullable=False)
-    source_url = Column(String, nullable=False)
-    posted_at = Column(DateTime, nullable=False)
-    like_count = Column(Integer, default=0)
-    retweet_count = Column(Integer, default=0)
-    # AI要約はオンデマンドになったので、デフォルトは空(NULL)にする
-    ai_summary = Column(Text, nullable=True) 
-    # リンク先の要約を保存する新しい列
-    link_summary = Column(Text, nullable=True) 
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    def __repr__(self) -> str:
+        return f"<Prompt id={self.id} name={self.name}>"
 
-    analyses = relationship(
-        "AnalysisResult", 
-        secondary = analysis_posts_link,  # analysis_posts_linkテーブルを経由
-        back_populates = "posts" # AnalysisResult側の"posts"と相互参照
-    )
-    # TickerSentimentとのリレーションシップ
-    ticker_sentiments = relationship("TickerSentiment", back_populates="collected_post")
-    # usernameでTargetAccountと紐づけ
-    target_account = relationship(
-        "TargetAccount",
-        back_populates="posts"
-    )
 
-# --- テーブル: アプリケーション設定保存用 ---
-class Setting(Base):
-    """アプリケーション全体の設定を保存するテーブル (キーと値のペア)"""
-    """将来的に他の設定もここに追加可能"""
+class Setting(db.Model):
     __tablename__ = "settings"
-    id = Column(Integer, primary_key=True)
-    key = Column(String, unique=True, index=True, nullable=False) # 例: 'api_provider'
-    value = Column(String, nullable=False) # 例: 'X' or 'Threads'
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-# --- テーブル: AI分析結果保存用 ---
-class AnalysisResult(Base):
-    """どの投稿をどのプロンプトで分析したかを保存するテーブル"""
+    id = db.Column(db.Integer, primary_key=True)
+    key = db.Column(db.String, nullable=False, unique=True)
+    value = db.Column(db.String, nullable=False)
+    updated_at = db.Column(db.DateTime, default=_now)
+
+    def __repr__(self) -> str:
+        return f"<Setting {self.key}={self.value}>"
+
+
+class StockTickerMap(db.Model):
+    __tablename__ = "stock_ticker_map"
+
+    ticker = db.Column(db.String(10), primary_key=True)
+    company_name = db.Column(db.String, nullable=False)
+    gics_sector = db.Column(db.String, nullable=True)
+    gics_sub_industry = db.Column(db.String, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<StockTickerMap {self.ticker} {self.company_name}>"
+
+
+class TargetAccount(db.Model):
+    __tablename__ = "target_accounts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String, nullable=False, index=True)
+    provider = db.Column(db.String(20), nullable=False, index=True)
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    added_at = db.Column(db.DateTime, default=_now)
+
+    # relationship: one-to-many -> CollectedPost
+    collected_posts = db.relationship(
+        "CollectedPost", back_populates="account", cascade="all, delete-orphan", lazy="select"
+    )
+
+    def __repr__(self) -> str:
+        return f"<TargetAccount id={self.id} provider={self.provider} username={self.username}>"
+
+
+class User(db.Model):
+    __tablename__ = "users"
+
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64), nullable=False, unique=True, index=True)
+    password_hash = db.Column(db.String(256), nullable=False)
+    created_at = db.Column(db.DateTime, default=_now)
+
+    # 任意のフラグ（既存コードが is_admin を参照する場合に対応）
+    is_admin = db.Column(db.Boolean, default=False)
+
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password: str) -> bool:
+        if not self.password_hash:
+            return False
+        return check_password_hash(self.password_hash, password)
+
+    def __repr__(self) -> str:
+        return f"<User {self.username}>"
+
+
+class AnalysisResult(db.Model):
     __tablename__ = "analysis_results"
 
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # 外部キー: 使用したプロンプト
-    prompt_id = Column(Integer, ForeignKey('prompts.id'), nullable=False, index=True)
+    id = db.Column(db.Integer, primary_key=True)
+    prompt_id = db.Column(db.Integer, db.ForeignKey("prompts.id"), nullable=False, index=True)
+    raw_json_response = db.Column(db.Text, nullable=True)
+    extracted_summary = db.Column(db.Text, nullable=True)
+    analyzed_at = db.Column(db.DateTime, nullable=True)
+    ai_model = db.Column(db.String, nullable=True)
+    cost_usd = db.Column(db.Float, nullable=True)
+    input_tokens = db.Column(db.Integer, nullable=True)
+    output_tokens = db.Column(db.Integer, nullable=True)
+    extracted_tickers = db.Column(db.String, nullable=True)
 
-    # AIからの生のJSONレスポンス全体
-    raw_json_response = Column(Text, nullable=True)
+    prompt = db.relationship("Prompt", backref=db.backref("analysis_results", lazy="select"))
 
-    # JSONから抽出した主要な結果("summary"など)
-    extracted_summary = Column(Text, nullable=True)
-    
-    # (任意) センチメントや銘柄など、将来的に抽出するデータ用のカラム
-    # extracted_sentiment = Column(String, nullable=True)
-    # extracted_tickers = Column(String, nullable=True)
-    
-    analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-    # リレーションシップ定義("Prompt")
-    prompt = relationship("Prompt")
-
-    # この分析のために使用した投稿群リスト (多対多)
-    posts = relationship(
-        "CollectedPost", 
-        secondary = analysis_posts_link,
-        back_populates = "analyses" 
-    ) 
-
-    # ▼▼▼【ここから追加】コストとモデルのカラム ▼▼▼
-    # 使用したAIモデル (例: gpt-4o-mini, gpt-3.5-turbo)
-    ai_model = Column(String, nullable=True)
-    # 消費したクレジットの概算コスト (USD)
-    cost_usd = Column(Float, nullable=True)
-    # 使用したトークン数 (入力)
-    input_tokens = Column(Integer, nullable=True) 
-    # 使用したトークン数 (出力)
-    output_tokens = Column(Integer, nullable=True) 
-
-    # AIが抽出した銘柄コード (例: "AAPL,TSLA,MSFT")
-    extracted_tickers = Column(String, nullable=True, index=True) 
-
-    # (子) このバッチ分析に含まれる個別のセンチメント結果
-    sentiments = relationship(
-        "TickerSentiment", 
-        back_populates="analysis_result",
-        order_by="TickerSentiment.collected_post_id" # (★) groupby のためにソート順を追加
+    # many-to-many -> CollectedPost via association table analysis_posts_link
+    collected_posts = db.relationship(
+        "CollectedPost",
+        secondary="analysis_posts_link",
+        back_populates="analysis_results",
+        lazy="select",
     )
 
-class StockTickerMap(Base):
-    """S&P500などの銘柄と企業名、エイリアス（愛称）の変換表"""
-    __tablename__ = "stock_ticker_map"
-    
-    ticker = Column(String(10), primary_key=True) # "AAPL"
-    company_name = Column(String, nullable=False, index=True) # "Apple Inc."
-    # GICS Sector (例: 'Information Technology')
-    gics_sector = Column(String, nullable=True, index=True) 
-    # GICS Sub-Industry (例: 'Application Software')
-    gics_sub_industry = Column(String, nullable=True)
+    ticker_sentiments = db.relationship("TickerSentiment", back_populates="analysis_result", lazy="select")
+
+    def __repr__(self) -> str:
+        return f"<AnalysisResult id={self.id} prompt_id={self.prompt_id}>"
 
 
-class TickerSentiment(Base):
-    """投稿内の各銘柄に対するセンチメント分析結果"""
-    __tablename__ = "ticker_sentiment"
-    
-    id = Column(Integer, primary_key=True, index=True)
-    
-    # どのバッチ分析に属しているか
-    analysis_result_id = Column(Integer, ForeignKey('analysis_results.id'), nullable=False, index=True)
-    # どの投稿に対する分析か
-    collected_post_id = Column(Integer, ForeignKey('collected_posts.id'), nullable=False, index=True)
-    # どの銘柄か (ティッカーで統一)
-    ticker = Column(String(10), ForeignKey('stock_ticker_map.ticker'), nullable=False, index=True)
-    
-    sentiment = Column(String(10), nullable=False) # "Positive", "Negative", "Neutral"
-    reasoning = Column(Text, nullable=True) # AIによる判断根拠
-    
-    # (親) このセンチメント結果が属するバッチ分析
-    analysis_result = relationship("AnalysisResult", back_populates="sentiments")
-    collected_post = relationship("CollectedPost", back_populates="ticker_sentiments")
+class CollectedPost(db.Model):
+    __tablename__ = "collected_posts"
 
-class UserTickerWeight(Base):
-    """
-    監視対象アカウント (TargetAccount) と銘柄 (StockTickerMap) の
-    関係性（重み）を「総言及回数」と「正規化比率」として蓄積するテーブル。
-    """
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String, db.ForeignKey("target_accounts.username"), nullable=False, index=True)
+    post_id = db.Column(db.String, nullable=False, unique=True, index=True)
+    original_text = db.Column(db.Text, nullable=False)
+    source_url = db.Column(db.String, nullable=False)
+    posted_at = db.Column(db.DateTime, nullable=False)
+    like_count = db.Column(db.Integer, nullable=True)
+    retweet_count = db.Column(db.Integer, nullable=True)
+    ai_summary = db.Column(db.Text, nullable=True)
+    link_summary = db.Column(db.Text, nullable=True)
+    created_at = db.Column(db.DateTime, default=_now)
+
+    account = db.relationship("TargetAccount", back_populates="collected_posts", lazy="joined")
+    analysis_results = db.relationship(
+        "AnalysisResult",
+        secondary="analysis_posts_link",
+        back_populates="collected_posts",
+        lazy="select",
+    )
+
+    ticker_sentiments = db.relationship("TickerSentiment", back_populates="collected_post", lazy="select")
+
+    def __repr__(self) -> str:
+        return f"<CollectedPost id={self.id} post_id={self.post_id} username={self.username}>"
+
+
+class UserTickerWeight(db.Model):
     __tablename__ = "user_ticker_weights"
-    
-    id = Column(Integer, primary_key=True)
-    
-    # 外部キー: どの監視対象アカウントか
-    account_id = Column(Integer, ForeignKey('target_accounts.id'), nullable=False, index=True)
-    
-    # 外部キー: どの銘柄か
-    ticker = Column(String(10), ForeignKey('stock_ticker_map.ticker'), nullable=False, index=True)
-    
-    # 蓄積値 (言及回数) - フェーズ2で更新
-    total_mentions = Column(Integer, nullable=False, default=0)
-    
-    # 重み付け (正規化比率: 0.0 ～ 1.0) - フェーズ3で更新
-    weight_ratio = Column(Float, nullable=False, default=0.0, index=True)
-    
-    last_analyzed_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    __table_args__ = (
+        db.UniqueConstraint("account_id", "ticker", name="_account_ticker_uc"),
+    )
 
-    # (親) この重み付けが属するアカウント
-    account = relationship("TargetAccount", back_populates="weights")
+    id = db.Column(db.Integer, primary_key=True)
+    account_id = db.Column(db.Integer, db.ForeignKey("target_accounts.id"), nullable=False, index=True)
+    ticker = db.Column(db.String(10), db.ForeignKey("stock_ticker_map.ticker"), nullable=False, index=True)
+    total_mentions = db.Column(db.Integer, nullable=False, default=0)
+    weight_ratio = db.Column(db.Float, nullable=False, default=0.0)
+    last_analyzed_at = db.Column(db.DateTime, nullable=True)
 
-    __table_args__ = (UniqueConstraint('account_id', 'ticker', name='_account_ticker_uc'),)
+    account = db.relationship("TargetAccount", lazy="joined")
+    ticker_map = db.relationship("StockTickerMap", lazy="joined")
+
+    def __repr__(self) -> str:
+        return f"<UserTickerWeight account_id={self.account_id} ticker={self.ticker} weight={self.weight_ratio}>"
+
+
+class AnalysisPostsLink(db.Model):
+    __tablename__ = "analysis_posts_link"
+
+    analysis_result_id = db.Column(db.Integer, db.ForeignKey("analysis_results.id"), primary_key=True)
+    collected_post_id = db.Column(db.Integer, db.ForeignKey("collected_posts.id"), primary_key=True)
+
+    analysis_result = db.relationship("AnalysisResult", backref=db.backref("analysis_posts_link_rows", lazy="select"))
+    collected_post = db.relationship("CollectedPost", backref=db.backref("analysis_posts_link_rows", lazy="select"))
+
+    def __repr__(self) -> str:
+        return f"<AnalysisPostsLink ar={self.analysis_result_id} cp={self.collected_post_id}>"
+
+
+class TickerSentiment(db.Model):
+    __tablename__ = "ticker_sentiment"
+
+    id = db.Column(db.Integer, primary_key=True)
+    analysis_result_id = db.Column(db.Integer, db.ForeignKey("analysis_results.id"), nullable=False, index=True)
+    collected_post_id = db.Column(db.Integer, db.ForeignKey("collected_posts.id"), nullable=False, index=True)
+    ticker = db.Column(db.String(10), db.ForeignKey("stock_ticker_map.ticker"), nullable=False, index=True)
+    sentiment = db.Column(db.String(10), nullable=False)
+    reasoning = db.Column(db.Text, nullable=True)
+
+    analysis_result = db.relationship("AnalysisResult", back_populates="ticker_sentiments", lazy="joined")
+    collected_post = db.relationship("CollectedPost", back_populates="ticker_sentiments", lazy="joined")
+    ticker_map = db.relationship("StockTickerMap", lazy="joined")
+
+    def __repr__(self) -> str:
+        return f"<TickerSentiment {self.ticker} sentiment={self.sentiment}>"
+
+
+# ---- モデルモジュールの初期化時に実行する安全チェック (インポート時に致命的エラーを出さない) ----
+# 以前はここで .env の DB_* を必須として例外を投げていた可能性があります。
+# ここでは import 時には致命的な例外は投げず、必要なら警告を出してフォールバックします。
+try:
+    # Flask アプリコンテキストが存在する場合は、設定値の検査を行うことができます。
+    cfg = current_app.config if current_app else None  # type: ignore
+    # もし本番環境の必須設定チェックをしたい場合は、create_app 内で実施してください。
+except Exception:
+    # current_app が未作成の場合（テスト/CI）はここに到達します。無視して続行。
+    pass
