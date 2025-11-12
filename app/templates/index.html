@@ -10,18 +10,33 @@
     <p><a href="{{ url_for('auth.logout') }}">ログアウト</a></p>
   {% else %}
     <p><a href="{{ url_for('auth.login') }}">ログイン</a></p>
-  {% endif %>
+  {% endif %}
 
   <h1>投稿一覧</h1>
   <ul>
-  {% for p in posts %}
-    <li>
-      {% if p.username %}{{ p.username }}{% else %}unknown{% endif %} —
-      {% if p.ai_summary %}{{ p.ai_summary }}{% else %}{{ p.original_text[:120] }}{% endif %}
-    </li>
-  {% else %}
-    <li>投稿はありません。</li>
-  {% endfor %}
+    {% if posts %}
+      {% for p in posts %}
+        <li>
+          {% if p.username %}
+            {{ p.username }}
+          {% else %}
+            unknown
+          {% endif %}
+          — 
+          {% if p.ai_summary %}
+            {{ p.ai_summary }}
+          {% else %}
+            {% if p.original_text %}
+              {{ p.original_text[:120] }}
+            {% else %}
+              (本文なし)
+            {% endif %}
+          {% endif %}
+        </li>
+      {% endfor %}
+    {% else %}
+      <li>投稿はありません。</li>
+    {% endif %}
   </ul>
 </body>
 </html>

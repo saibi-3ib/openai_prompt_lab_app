@@ -37,17 +37,22 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
           pip install pytest
 
-      - name: Set environment variables for Flask
+      - name: Set environment variables for Flask and DB (CI)
         run: |
           echo "FLASK_APP=run.py" >> $GITHUB_ENV
           echo "FLASK_ENV=development" >> $GITHUB_ENV
           echo "DISABLE_FORCE_HTTPS=1" >> $GITHUB_ENV
+          # 明示的に SQLite を使う（絶対パス推奨）
+          echo "DATABASE_URL=sqlite:////${GITHUB_WORKSPACE}/instance/dev.db" >> $GITHUB_ENV
 
-      - name: Prepare instance directory and DB
+      - name: Prepare instance directory and ensure migrations
         run: |
           mkdir -p instance
-          # ensure migrations exist before running upgrade
-          ls -la migrations || true
+          # If migrations does not exist, initialize alembic structure
+          if [ ! -d migrations ]; then
+            flask db init
+            flask db migrate -m "ci: initial"
+          fi
 
       - name: Apply database migrations
         env:

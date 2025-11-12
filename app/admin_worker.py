@@ -91,7 +91,7 @@ def get_limiter():
     return current_app.extensions.get("limiter")
 
 
-@admin_bp.route("/admin/worker", methods=["GET", "POST"])
+@admin_bp.route("/worker", methods=["GET", "POST"])
 @login_required
 def worker_settings():
     # ensure admin

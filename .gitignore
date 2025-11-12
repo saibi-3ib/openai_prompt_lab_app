@@ -2,6 +2,8 @@
 __pycache__/
 *.py[cod]
 *$py.class
+*.pyc
+
 
 # Virtual Environment
 venv/
@@ -13,6 +15,8 @@ env/
 
 # dotenv
 .env
+.env.*
+
 .DS_Store
 local_database.db
 
