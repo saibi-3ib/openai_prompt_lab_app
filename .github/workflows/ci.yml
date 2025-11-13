@@ -55,7 +55,7 @@ jobs:
         run: |
           if [ -d migrations ] && [ "$(ls -A migrations 2>/dev/null)" ]; then
             echo "migrations found — attempting flask db upgrade"
-            # 実行に失敗してもここではジョブを止めず、次のステップでフォールバックを行う
+            # 失敗してもジョブを止めず、次のステップでフォールバックする
             flask db upgrade || echo "flask db upgrade failed (continuing to create_all fallback)"
           else
             echo "no migrations present — skipping upgrade"
@@ -67,7 +67,7 @@ jobs:
           FLASK_ENV: development
           DISABLE_FORCE_HTTPS: 1
         run: |
-          python - <<'PY'
+          python scripts/ci_ensure_db.py
 from app import create_app
 from app.extensions import db
 app = create_app("development")
