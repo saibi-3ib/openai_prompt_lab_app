@@ -6,6 +6,14 @@
 
 環境: FLASK_ENV=development で実行してください。
 """
+from pathlib import Path
+import sys
+
+# プロジェクトルートを sys.path に追加（スクリプト直実行時に app を import 可能にする）
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 from getpass import getpass
 from werkzeug.security import generate_password_hash
 
