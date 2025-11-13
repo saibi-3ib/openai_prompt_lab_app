@@ -14,6 +14,7 @@ import subprocess
 from pathlib import Path
 import time
 import logging
+import threading
 
 admin_bp = Blueprint("admin_worker", __name__, template_folder="templates")
 
@@ -34,6 +35,66 @@ if not logger.handlers:
     logger.addHandler(handler)
     logger.setLevel(logging.INFO)
 
+if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
+    sh = logging.StreamHandler(sys.stdout)
+    sh.setLevel(logging.INFO)
+    sh.setFormatter(formatter)  # 上で作った formatter を使うか再定義
+    logger.addHandler(sh)
+
+def _stream_process_output_to_file_and_stdout(proc, logfile_path):
+    """
+    Read proc.stdout and write each line to logfile_path (append) and to sys.stdout.
+    Non-blocking: run in a daemon thread.
+    """
+    try:
+        # バイナリで開いてそのまま書く
+        with open(logfile_path, "ab") as f:
+            while True:
+                line = proc.stdout.readline()
+                if not line:
+                    # プロセス終了してもう読み出せない場合はループを抜ける
+                    if proc.poll() is not None:
+                        break
+                    # そうでなければ小さいスリープで待つ
+                    time.sleep(0.1)
+                    continue
+                try:
+                    # ファイルへ書き込み
+                    f.write(line)
+                    f.flush()
+                    # stdout にも書く（Render の Logs に流す）
+                    try:
+                        sys.stdout.buffer.write(line)
+                        sys.stdout.buffer.flush()
+                    except Exception:
+                        # Python implementation 依存で buffer が無い場合 fallback
+                        try:
+                            sys.stdout.write(line.decode(errors="ignore"))
+                            sys.stdout.flush()
+                        except Exception:
+                            pass
+                except Exception:
+                    # ファイル書き込み失敗でもループは継続
+                    current_app.logger.exception("Error while streaming process output")
+            # 最後に残りを読んで終了
+            remaining = proc.stdout.read()
+            if remaining:
+                try:
+                    f.write(remaining)
+                    f.flush()
+                    try:
+                        sys.stdout.buffer.write(remaining)
+                        sys.stdout.buffer.flush()
+                    except Exception:
+                        try:
+                            sys.stdout.write(remaining.decode(errors="ignore"))
+                            sys.stdout.flush()
+                        except Exception:
+                            pass
+                except Exception:
+                    current_app.logger.exception("Error while flushing remaining output")
+    except Exception:
+        current_app.logger.exception("_stream_process_output_to_file_and_stdout failed")
 
 def is_worker_running() -> bool:
     if not PID_FILE.exists():
@@ -130,9 +191,25 @@ def worker_settings():
 
             # Start detached process and log output
             try:
-                with open(LOG_FILE, "ab") as out:
-                    proc = subprocess.Popen(cmd, stdout=out, stderr=subprocess.STDOUT, cwd=cwd, env=os.environ.copy())
+                # proc を PIPE で開始
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.STDOUT,
+                    cwd=cwd,
+                    env=os.environ.copy()
+                )
+                # PID ファイルに書く
                 PID_FILE.write_text(str(proc.pid))
+
+                # スレッドで stdout を読み取り、ファイルと親 stdout に中継
+                t = threading.Thread(
+                    target=_stream_process_output_to_file_and_stdout,
+                    args=(proc, str(LOG_FILE)),
+                    daemon=True,
+                )
+                t.start()
+
                 flash(f"Worker started (pid {proc.pid}). Logs: {LOG_FILE}", "success")
                 logger.info("Worker started by user=%s pid=%s cmd=%s", getattr(current_user, "id", None), proc.pid, " ".join(cmd))
             except Exception as e:
