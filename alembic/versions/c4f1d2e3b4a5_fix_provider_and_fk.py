@@ -20,17 +20,15 @@ depends_on = None
 
 def upgrade():
     # 1) Add provider column (nullable) in a DB-agnostic way.
-    # If column already exists, op.add_column may still raise; wrap in try/except to be safe.
     try:
         op.add_column(
             "target_accounts",
             sa.Column("provider", sa.String(length=50), nullable=True),
         )
     except Exception:
-        # If column exists or DB does not allow ADD COLUMN here, ignore and continue.
         pass
 
-    # 2) Fill provider for existing target_accounts rows that have NULL
+    # 2) Fill provider for existing rows that have NULL
     try:
         op.execute(
             text("UPDATE target_accounts SET provider = 'X' WHERE provider IS NULL;")
@@ -39,7 +37,6 @@ def upgrade():
         pass
 
     # 3) Insert missing target_accounts for orphan usernames found in collected_posts.
-    # Use SQL compatible across SQLite/Postgres. Use 0 for false in SQLite.
     try:
         op.execute(
             text(
@@ -79,8 +76,7 @@ WHERE cp.username IS NOT NULL AND ta.username IS NULL;
     except Exception:
         pass
 
-    # 6) Now provider can be made NOT NULL. SQLite may not support altering column nullability;
-    # attempt with op.alter_column and ignore failures (DB-specific repairs should be done manually if needed).
+    # 6) Try to make provider NOT NULL where supported (SQLite may ignore/require manual rework)
     try:
         op.alter_column(
             "target_accounts",
@@ -93,7 +89,6 @@ WHERE cp.username IS NOT NULL AND ta.username IS NULL;
 
 
 def downgrade():
-    # Reverse: drop FK if exists, drop provider column if exists
     try:
         op.drop_constraint(
             "collected_posts_username_fkey", "collected_posts", type_="foreignkey"
@@ -101,9 +96,12 @@ def downgrade():
     except Exception:
         pass
 
-    # Dropping a column on SQLite via Alembic may not be supported without table rebuild.
+    try:
+        op.drop_index("ix_target_accounts_username", table_name="target_accounts")
+    except Exception:
+        pass
+
     try:
         op.drop_column("target_accounts", "provider")
     except Exception:
-        # If drop_column not supported on this backend, ignore.
         pass
