@@ -15,8 +15,6 @@ from werkzeug.security import generate_password_hash, check_password_hash
 from flask import current_app
 from flask_login import UserMixin
 
-
-
 from app.extensions import db
 
 
@@ -124,11 +122,18 @@ class AnalysisResult(db.Model):
     prompt = db.relationship("Prompt", backref=db.backref("analysis_results", lazy="select"))
 
     # many-to-many -> CollectedPost via association table analysis_posts_link
+    analysis_posts_link_rows = db.relationship(
+        "AnalysisPostsLink",
+        back_populates="analysis_result",
+        lazy="select",
+        overlaps="analysis_results,collected_posts,analysis_posts_link_rows",
+    )
     collected_posts = db.relationship(
         "CollectedPost",
         secondary="analysis_posts_link",
         back_populates="analysis_results",
         lazy="select",
+        overlaps="analysis_posts_link_rows",
     )
 
     ticker_sentiments = db.relationship("TickerSentiment", back_populates="analysis_result", lazy="select")
@@ -153,11 +158,18 @@ class CollectedPost(db.Model):
     created_at = db.Column(db.DateTime, default=_now)
 
     account = db.relationship("TargetAccount", back_populates="collected_posts", lazy="joined")
+    analysis_posts_link_rows = db.relationship(
+        "AnalysisPostsLink",
+        back_populates="collected_post",
+        lazy="select",
+        overlaps="analysis_results,collected_posts,analysis_posts_link_rows",
+    )
     analysis_results = db.relationship(
         "AnalysisResult",
         secondary="analysis_posts_link",
         back_populates="collected_posts",
         lazy="select",
+        overlaps="analysis_posts_link_rows",
     )
 
     ticker_sentiments = db.relationship("TickerSentiment", back_populates="collected_post", lazy="select")
@@ -192,8 +204,16 @@ class AnalysisPostsLink(db.Model):
     analysis_result_id = db.Column(db.Integer, db.ForeignKey("analysis_results.id"), primary_key=True)
     collected_post_id = db.Column(db.Integer, db.ForeignKey("collected_posts.id"), primary_key=True)
 
-    analysis_result = db.relationship("AnalysisResult", backref=db.backref("analysis_posts_link_rows", lazy="select"))
-    collected_post = db.relationship("CollectedPost", backref=db.backref("analysis_posts_link_rows", lazy="select"))
+    analysis_result = db.relationship(
+        "AnalysisResult",
+        back_populates="analysis_posts_link_rows",
+        overlaps="analysis_results,collected_posts,analysis_posts_link_rows",
+    )
+    collected_post = db.relationship(
+        "CollectedPost",
+        back_populates="analysis_posts_link_rows",
+        overlaps="analysis_results,collected_posts,analysis_posts_link_rows",
+    )
 
     def __repr__(self) -> str:
         return f"<AnalysisPostsLink ar={self.analysis_result_id} cp={self.collected_post_id}>"
