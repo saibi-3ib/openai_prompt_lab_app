@@ -1,79 +1,46 @@
-# --- ▼▼▼【以下を追加】▼▼▼ ---
-import os
+# alembic/env.py -- adapted to load Flask app and use Flask-SQLAlchemy metadata
+from __future__ import with_statement
 
-# models.py の Base をインポート (パスを調整する必要があるかもしれません)
-# Assuming models.py is in the parent directory of 'alembic'
-import sys
+import os
 from logging.config import fileConfig
 
-from dotenv import load_dotenv
-from sqlalchemy import create_engine, pool
+from sqlalchemy import engine_from_config, pool
 
 from alembic import context
 
-sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
-from app.models import DATABASE_URL, Base  # DATABASE_URL もインポート
-
-# --- ▲▲▲【追加ここまで】▲▲▲ ---
-
-# プロジェクトのルートディレクトリをsys.pathに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-
-
-load_dotenv()
-
-# プロジェクトのルートディレクトリへの絶対パスを取得
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
-# .envファイルからデータベースURLを取得、もしくはデフォルトの'app.db'を使用
-DB_NAME = os.environ.get("DB_FILENAME", "app.db")
-# 絶対パスのデータベースURLを構築
-DYNAMIC_DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, DB_NAME)}"
-print(
-    f"--- [alembic/env.py] Connecting to database at: {DYNAMIC_DATABASE_URL} ---"
-)  # デバッグ用出力
+# Import the Flask app factory and SQLAlchemy instance
+# Adjust the import path if your create_app or extensions are located elsewhere.
+from app import create_app
+from app.extensions import db
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
 
-# --- ▼▼▼【ここを修正】▼▼▼ ---
-# Read DATABASE_URL directly from the imported models module
-# instead of relying solely on alembic.ini's load_dotenv setting.
-db_url = DATABASE_URL
-if not db_url:
-    raise ValueError(
-        "DATABASE_URL could not be imported from models.py. Check models.py and .env setup."
-    )
-# Explicitly set the sqlalchemy.url for Alembic using the imported URL
-config.set_main_option("sqlalchemy.url", db_url)
-print(
-    f"--- [alembic/env.py] Using DATABASE_URL from models: {db_url} ---"
-)  # デバッグ用出力追加
-# --- ▲▲▲【修正ここまで】▲▲▲ ---
-
 # Interpret the config file for Python logging.
-# This line sets up loggers basically.
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# for SQLAlchemy 2.0 models, Metadata is available via Base.metadata
-target_metadata = Base.metadata
+# If sqlalchemy.url is not set in alembic.ini, obtain it from Flask app config.
+# Use FLASK_CONFIG environment variable if present (default to "development").
+flask_config = os.getenv("FLASK_CONFIG", "development")
+app = create_app(flask_config)
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+# Use the SQLAlchemy metadata from Flask-SQLAlchemy for autogenerate
+target_metadata = db.metadata
+
+# If alembic.ini doesn't contain sqlalchemy.url, set it from Flask app's engine.
+if not config.get_main_option("sqlalchemy.url"):
+    with app.app_context():
+        # db.engine.url is a SQLAlchemy URL object; cast to str for alembic config.
+        config.set_main_option("sqlalchemy.url", str(db.engine.url))
 
 
-def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-    # ... (docstring) ...
-    """
-    # url = config.get_main_option("sqlalchemy.url") # <-- 元の行をコメントアウトまたは削除
+def run_migrations_offline():
+    """Run migrations in 'offline' mode."""
+    url = config.get_main_option("sqlalchemy.url")
     context.configure(
-        # --- ▼▼▼【ここを修正】▼▼▼ ---
-        url=DATABASE_URL,  # <-- インポートした DATABASE_URL を直接使う
-        # --- ▲▲▲【修正ここまで】▲▲▲ ---
+        url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -83,20 +50,13 @@ def run_migrations_offline() -> None:
         context.run_migrations()
 
 
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-    # ... (docstring) ...
-    """
-    # --- ▼▼▼【ここの engine 作成部分を修正】▼▼▼ ---
-    # connectable = engine_from_config(
-    #     config.get_section(config.config_ini_section, {}),
-    #     prefix="sqlalchemy.",
-    #     poolclass=pool.NullPool,
-    # ) # <-- 元の engine_from_config をコメントアウトまたは削除
-
-    # --- 代わりに、インポートした DATABASE_URL を使って直接 engine を作成 ---
-    connectable = create_engine(DATABASE_URL, poolclass=pool.NullPool)
-    # --- ▲▲▲【修正ここまで】▲▲▲ ---
+def run_migrations_online():
+    """Run migrations in 'online' mode."""
+    connectable = engine_from_config(
+        config.get_section(config.config_ini_section) or {},
+        prefix="sqlalchemy.",
+        poolclass=pool.NullPool,
+    )
 
     with connectable.connect() as connection:
         context.configure(connection=connection, target_metadata=target_metadata)
