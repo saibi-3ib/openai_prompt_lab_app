@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Accounts</title></head>
+<body>
+  <a href="{{ url_for('main.index') }}">Home</a>
+  <h1>連携アカウント</h1>
+  {% if accounts %}
+    <ul>{% for a in accounts %}<li>{{ a.provider }} / {{ a.username }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>アカウントが登録されていません。</p>
+  {% endif %}
+</body>
+</html>

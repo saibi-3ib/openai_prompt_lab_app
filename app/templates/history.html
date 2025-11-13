@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>History</title></head>
+<body>
+  <a href="{{ url_for('main.index') }}">Home</a>
+  <h1>履歴 (history)</h1>
+  {% if results %}
+    <ul>{% for r in results %}<li>{{ r }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>履歴はありません。</p>
+  {% endif %}
+</body>
+</html>

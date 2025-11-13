@@ -1,11 +1,11 @@
 import os
 import json
 import openai
-from models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
+from app.models import SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult
 from typing import Dict, List, Optional
 from sqlalchemy.orm import Session
 from datetime import datetime, timezone
-from models import (
+from app.models import (
     SessionLocal, CollectedPost, Setting, Prompt, AnalysisResult, 
     TargetAccount, StockTickerMap, TickerSentiment, UserTickerWeight
 )

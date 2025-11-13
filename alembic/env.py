@@ -15,12 +15,12 @@ from dotenv import load_dotenv
 # Assuming models.py is in the parent directory of 'alembic'
 import sys
 sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
-from models import Base, DATABASE_URL # DATABASE_URL もインポート
+from app.models import Base, DATABASE_URL # DATABASE_URL もインポート
 # --- ▲▲▲【追加ここまで】▲▲▲ ---
 
 # プロジェクトのルートディレクトリをsys.pathに追加
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from models import Base  # ここでmodels.pyのBaseをインポート
+from app.models import Base  # ここでmodels.pyのBaseをインポート
 from dotenv import load_dotenv
 
 load_dotenv()

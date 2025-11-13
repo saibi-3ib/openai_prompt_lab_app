@@ -1,0 +1,48 @@
+from flask import render_template, redirect, url_for, request, flash, current_app
+from flask_login import login_required, current_user
+from . import main_bp
+from ...extensions import db
+# Adjust import path if needed
+from ...models import CollectedPost, TargetAccount
+
+@main_bp.route("/")
+@login_required
+def index():
+    # existing index implementation
+    try:
+        posts = db.session.query(CollectedPost).order_by(CollectedPost.id.desc()).limit(50).all()
+    except Exception:
+        current_app.logger.debug("No CollectedPost model or DB access; returning empty list")
+        posts = []
+    return render_template("index.html", posts=posts)
+
+@main_bp.route("/manage")
+@login_required
+def manage():
+    # Placeholder: list settings / controls
+    try:
+        settings = db.session.query().execute("SELECT key, value FROM settings") if False else []
+    except Exception:
+        settings = []
+    return render_template("manage.html", settings=settings)
+
+@main_bp.route("/accounts")
+@login_required
+def accounts():
+    # show linked target accounts
+    try:
+        accounts = db.session.query(TargetAccount).order_by(TargetAccount.id.desc()).all()
+    except Exception:
+        current_app.logger.debug("No TargetAccount model or DB access; returning empty list")
+        accounts = []
+    return render_template("accounts.html", accounts=accounts)
+
+@main_bp.route("/history")
+@login_required
+def history():
+    # placeholder: recent analysis results
+    try:
+        results = db.session.execute("SELECT * FROM analysis_results ORDER BY analyzed_at DESC LIMIT 50").fetchall() if False else []
+    except Exception:
+        results = []
+    return render_template("history.html", results=results)

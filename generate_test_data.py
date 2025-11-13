@@ -3,7 +3,7 @@
 import random
 import argparse
 from datetime import datetime, timezone, timedelta
-from models import SessionLocal, CollectedPost, TickerSentiment, TargetAccount, StockTickerMap, Prompt, AnalysisResult
+from app.models import SessionLocal, CollectedPost, TickerSentiment, TargetAccount, StockTickerMap, Prompt, AnalysisResult
 import string
 
 SAMPLE_TICKERS = ['AAPL','TSLA','MSFT','AMZN','GOOG','FB','NFLX','NVDA','INTC','AMD','BABA','FOX']

@@ -1,7 +1,7 @@
 import sys
 import os
 from sqlalchemy import func
-from models import SessionLocal, TargetAccount, UserTickerWeight
+from app.models import SessionLocal, TargetAccount, UserTickerWeight
 
 def recalculate_all_weights():
     """
