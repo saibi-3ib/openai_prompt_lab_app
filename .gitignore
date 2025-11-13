@@ -1,31 +1,71 @@
-# Byte-compiled / optimized / DLL files
+# Python related
 __pycache__/
-*.py[cod]
-*$py.class
 *.pyc
+*.pyo
+*.pyd
+*.swp
 
-
-# Virtual Environment
+# Virtualenv
 venv/
 .venv/
-ENV/
-env/
-*/env/
-*/venv/
-
-# dotenv
 .env
-.env.*
+.env.local
+.env.*.local
 
+# Editor
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# OS
 .DS_Store
-local_database.db
+Thumbs.db
 
-admin_actions.log
-logs/worker_run.log
-*.bak
-cookies.txt
-flask_session/
-instance/
+# Database / instance files
+instance/*.db
 *.sqlite3
+*.sqlite
 *.db
-instance/
+
+# Backups and temp
+*~
+*.bak
+*.orig
+
+# Distribution / build artifacts
+dist/
+build/
+*.egg-info/
+pip-wheel-metadata/
+*.whl
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Type checking / caches
+.mypy_cache/
+.pytype/
+.cache/
+
+# Logs
+*.log
+logs/
+
+# Packaging / editor caches
+*.egg
+pip-wheel-metadata/
+
+# Python/version managers
+.python-version
+
+# Misc
+*.log
+*.tmp
+
+flask_session/
+cookies.txt
