@@ -64,7 +64,7 @@ class TargetAccount(db.Model):
     __tablename__ = "target_accounts"
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, nullable=False, index=True)
+    username = db.Column(db.String, nullable=False, unique=True, index=True)
     provider = db.Column(db.String(20), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     added_at = db.Column(db.DateTime, default=_now)
