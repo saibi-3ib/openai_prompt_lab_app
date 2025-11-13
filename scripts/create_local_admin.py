@@ -3,25 +3,27 @@
 
 使い方:
     python scripts/create_local_admin.py
-
-環境: FLASK_ENV=development で実行してください。
 """
-from pathlib import Path
+
 import sys
+from pathlib import Path
 
 # プロジェクトルートを sys.path に追加（スクリプト直実行時に app を import 可能にする）
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from getpass import getpass
-from werkzeug.security import generate_password_hash
-
-from app import create_app
-from app.extensions import db
-from app.models import User  # models の場所を適宜修正してください
 
 def main():
+    # imports は sys.path 追加後に行う（ruff E402 回避）
+    from getpass import getpass
+
+    from werkzeug.security import generate_password_hash
+
+    from app import create_app
+    from app.extensions import db
+    from app.models import User
+
     app = create_app("development")
     with app.app_context():
         username = input("admin username [localadmin]: ") or "localadmin"
@@ -37,6 +39,7 @@ def main():
         db.session.commit()
         print("作成しました:", username)
         print("DB:", getattr(db.engine.url, "database", None))
+
 
 if __name__ == "__main__":
     main()

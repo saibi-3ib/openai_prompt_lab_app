@@ -1,6 +1,7 @@
-from flask_talisman import Talisman
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_talisman import Talisman
+
 
 def init_security(app):
     """
@@ -17,24 +18,17 @@ def init_security(app):
             "'self'",
             "https://cdn.tailwindcss.com",
             "https://cdn.jsdelivr.net",
-            "'unsafe-inline'"
+            "'unsafe-inline'",
         ],
         # Explicit element/attr policies (fallbacks)
         "script-src-elem": [
             "'self'",
             "https://cdn.tailwindcss.com",
             "https://cdn.jsdelivr.net",
-            "'unsafe-inline'"
+            "'unsafe-inline'",
         ],
-        "script-src-attr": [
-            "'self'",
-            "'unsafe-inline'"
-        ],
-        "style-src": [
-            "'self'",
-            "https://cdn.tailwindcss.com",
-            "'unsafe-inline'"
-        ],
+        "script-src-attr": ["'self'", "'unsafe-inline'"],
+        "style-src": ["'self'", "https://cdn.tailwindcss.com", "'unsafe-inline'"],
         "img-src": ["'self'", "data:"],
     }
 
@@ -47,7 +41,7 @@ def init_security(app):
         app,
         content_security_policy=csp,
         force_https=force_https,
-        strict_transport_security=strict_transport_security
+        strict_transport_security=strict_transport_security,
     )
 
     # NOTE: avoid passing `app` positionally — older/newer flask-limiter signatures
@@ -55,7 +49,7 @@ def init_security(app):
     limiter = Limiter(
         app=app,
         key_func=get_remote_address,
-        default_limits=["200 per day", "50 per hour"]
+        default_limits=["200 per day", "50 per hour"],
     )
 
     return limiter

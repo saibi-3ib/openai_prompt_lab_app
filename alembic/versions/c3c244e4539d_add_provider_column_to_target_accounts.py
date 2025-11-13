@@ -5,15 +5,12 @@ Revises: 89abeef2a6d7
 Create Date: 2025-11-08 14:31:38.424488
 
 """
-from typing import Sequence, Union
 
 from alembic import op
-import sqlalchemy as sa
-
 
 # revision identifiers, used by Alembic.
-revision = 'c3c244e4539d'
-down_revision = '89abeef2a6d7'
+revision = "c3c244e4539d"
+down_revision = "89abeef2a6d7"
 branch_labels = None
 depends_on = None
 
@@ -21,7 +18,8 @@ depends_on = None
 def upgrade() -> None:
     """Upgrade schema idempotently."""
     # Add provider column only if it does not exist.
-    op.execute("""
+    op.execute(
+        """
     DO $$
     BEGIN
       IF NOT EXISTS (
@@ -33,10 +31,12 @@ def upgrade() -> None:
       END IF;
     END
     $$;
-    """)
+    """
+    )
 
     # Create index on provider if not exists.
-    op.execute("""
+    op.execute(
+        """
     DO $$
     BEGIN
       IF NOT EXISTS (
@@ -47,13 +47,15 @@ def upgrade() -> None:
       END IF;
     END
     $$;
-    """)
+    """
+    )
 
 
 def downgrade() -> None:
     """Downgrade schema idempotently."""
     # Drop index if exists, then drop column if exists.
-    op.execute("""
+    op.execute(
+        """
     DO $$
     BEGIN
       IF EXISTS (
@@ -64,8 +66,11 @@ def downgrade() -> None:
       END IF;
     END
     $$;
-    """)
+    """
+    )
 
-    op.execute("""
+    op.execute(
+        """
     ALTER TABLE target_accounts DROP COLUMN IF EXISTS provider;
-    """)
+    """
+    )

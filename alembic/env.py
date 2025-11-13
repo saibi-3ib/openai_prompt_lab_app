@@ -1,37 +1,36 @@
-import os
-import sys
-from logging.config import fileConfig
-
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from sqlalchemy import create_engine
-
-from alembic import context
-
 # --- ▼▼▼【以下を追加】▼▼▼ ---
 import os
-from dotenv import load_dotenv
+
 # models.py の Base をインポート (パスを調整する必要があるかもしれません)
 # Assuming models.py is in the parent directory of 'alembic'
 import sys
-sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
-from app.models import Base, DATABASE_URL # DATABASE_URL もインポート
+from logging.config import fileConfig
+
+from dotenv import load_dotenv
+from sqlalchemy import create_engine, pool
+
+from alembic import context
+
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
+from app.models import DATABASE_URL, Base  # DATABASE_URL もインポート
+
 # --- ▲▲▲【追加ここまで】▲▲▲ ---
 
 # プロジェクトのルートディレクトリをsys.pathに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from app.models import Base  # ここでmodels.pyのBaseをインポート
-from dotenv import load_dotenv
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
 
 load_dotenv()
 
 # プロジェクトのルートディレクトリへの絶対パスを取得
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-#.envファイルからデータベースURLを取得、もしくはデフォルトの'app.db'を使用
+BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+# .envファイルからデータベースURLを取得、もしくはデフォルトの'app.db'を使用
 DB_NAME = os.environ.get("DB_FILENAME", "app.db")
 # 絶対パスのデータベースURLを構築
 DYNAMIC_DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, DB_NAME)}"
-print(f"--- [alembic/env.py] Connecting to database at: {DYNAMIC_DATABASE_URL} ---") # デバッグ用出力
+print(
+    f"--- [alembic/env.py] Connecting to database at: {DYNAMIC_DATABASE_URL} ---"
+)  # デバッグ用出力
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -42,10 +41,14 @@ config = context.config
 # instead of relying solely on alembic.ini's load_dotenv setting.
 db_url = DATABASE_URL
 if not db_url:
-    raise ValueError("DATABASE_URL could not be imported from models.py. Check models.py and .env setup.")
+    raise ValueError(
+        "DATABASE_URL could not be imported from models.py. Check models.py and .env setup."
+    )
 # Explicitly set the sqlalchemy.url for Alembic using the imported URL
-config.set_main_option('sqlalchemy.url', db_url)
-print(f"--- [alembic/env.py] Using DATABASE_URL from models: {db_url} ---") # デバッグ用出力追加
+config.set_main_option("sqlalchemy.url", db_url)
+print(
+    f"--- [alembic/env.py] Using DATABASE_URL from models: {db_url} ---"
+)  # デバッグ用出力追加
 # --- ▲▲▲【修正ここまで】▲▲▲ ---
 
 # Interpret the config file for Python logging.
@@ -69,7 +72,7 @@ def run_migrations_offline() -> None:
     # url = config.get_main_option("sqlalchemy.url") # <-- 元の行をコメントアウトまたは削除
     context.configure(
         # --- ▼▼▼【ここを修正】▼▼▼ ---
-        url=DATABASE_URL, # <-- インポートした DATABASE_URL を直接使う
+        url=DATABASE_URL,  # <-- インポートした DATABASE_URL を直接使う
         # --- ▲▲▲【修正ここまで】▲▲▲ ---
         target_metadata=target_metadata,
         literal_binds=True,
@@ -78,6 +81,7 @@ def run_migrations_offline() -> None:
 
     with context.begin_transaction():
         context.run_migrations()
+
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode.
@@ -94,14 +98,12 @@ def run_migrations_online() -> None:
     connectable = create_engine(DATABASE_URL, poolclass=pool.NullPool)
     # --- ▲▲▲【修正ここまで】▲▲▲ ---
 
-
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
+        context.configure(connection=connection, target_metadata=target_metadata)
 
         with context.begin_transaction():
             context.run_migrations()
+
 
 if context.is_offline_mode():
     run_migrations_offline()

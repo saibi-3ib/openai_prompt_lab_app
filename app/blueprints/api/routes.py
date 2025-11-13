@@ -1,5 +1,7 @@
+from flask import current_app, jsonify
+
 from . import api_bp
-from flask import jsonify, current_app
+
 
 @api_bp.route("/get-prompts", methods=["GET"])
 def get_prompts():

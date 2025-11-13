@@ -1,6 +1,8 @@
-from flask import render_template, current_app, abort
-from flask_login import login_required, current_user
+from flask import abort, current_app, render_template
+from flask_login import current_user, login_required
+
 from . import admin_bp
+
 
 # シンプルな管理チェック補助（実際のロジックに合わせて調整してください）
 def require_admin_or_abort():
@@ -8,7 +10,9 @@ def require_admin_or_abort():
         abort(401)
     if getattr(current_user, "is_admin", False):
         return
-    admin_users = current_app.config.get("ADMIN_USERS") or current_app.config.get("ADMIN_USERS_LIST")
+    admin_users = current_app.config.get("ADMIN_USERS") or current_app.config.get(
+        "ADMIN_USERS_LIST"
+    )
     if isinstance(admin_users, str):
         admin_users = [s.strip() for s in admin_users.split(",") if s.strip()]
     if not admin_users:
@@ -16,6 +20,7 @@ def require_admin_or_abort():
         return
     if current_user.username not in admin_users:
         abort(403)
+
 
 @admin_bp.route("/worker", methods=["GET", "POST"])
 @login_required
