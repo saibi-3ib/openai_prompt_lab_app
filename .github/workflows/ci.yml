@@ -55,7 +55,9 @@ jobs:
         run: |
           if [ -d migrations ] && [ "$(ls -A migrations 2>/dev/null)" ]; then
             echo "migrations found — attempting flask db upgrade"
-            flask db upgrade || ( echo "flask db upgrade failed; attempting fallback via create_all" && python - <<'PY'
+            flask db upgrade || {
+              echo "flask db upgrade failed; attempting fallback via create_all"
+              python - <<'PY'
 from app import create_app
 from app.extensions import db
 app = create_app("development")
@@ -63,7 +65,7 @@ with app.app_context():
     db.create_all()
 print("fallback create_all complete")
 PY
-            )
+            }
           else
             echo "no migrations present — creating tables via db.create_all()"
             python - <<'PY'
