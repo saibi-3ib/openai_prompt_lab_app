@@ -1,3 +1,4 @@
+# url=https://github.com/saibi-3ib/openai_prompt_lab_app/blob/main/.github/workflows/ci.yml
 name: CI
 
 on:
@@ -33,7 +34,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          pip install pytest
+          pip install alembic pytest
 
       - name: Set environment variables for Flask and DB (CI)
         run: |
@@ -46,27 +47,15 @@ jobs:
       - name: Prepare instance directory
         run: |
           mkdir -p instance
+          rm -f instance/dev.db
 
-      - name: Apply migrations if present (non-fatal)
+      - name: Apply migrations with alembic (fail on error)
         env:
           FLASK_APP: run.py
           FLASK_ENV: development
-          DISABLE_FORCE_HTTPS: 1
         run: |
-          if [ -d migrations ] && [ "$(ls -A migrations 2>/dev/null)" ]; then
-            echo "migrations found — attempting flask db upgrade"
-            flask db upgrade || echo "flask db upgrade failed (continuing to create_all fallback)"
-          else
-            echo "no migrations present — skipping upgrade"
-          fi
-
-      - name: Ensure DB tables exist (create_all fallback)
-        env:
-          FLASK_APP: run.py
-          FLASK_ENV: development
-          DISABLE_FORCE_HTTPS: 1
-        run: |
-          python scripts/ci_ensure_db.py
+          # Run alembic upgrade head to ensure migrations apply cleanly on a fresh sqlite DB
+          alembic upgrade head
 
       - name: Run tests
         env:
