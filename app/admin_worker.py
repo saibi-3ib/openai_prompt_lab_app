@@ -6,15 +6,26 @@ This blueprint expects:
 - WORKER_CONFIRM_PHRASE or default "RUN_WORKER" in config/env
 - ADMIN_USERS (optional) env var as comma-separated admin usernames if User model lacks is_admin
 """
-from flask import Blueprint, render_template, request, flash, redirect, url_for, current_app, abort
-from flask_login import login_required, current_user
-import os
-import sys
-import subprocess
-from pathlib import Path
-import time
+
 import logging
+import os
+import subprocess
+import sys
 import threading
+import time
+from pathlib import Path
+
+from flask import (
+    Blueprint,
+    abort,
+    current_app,
+    flash,
+    redirect,
+    render_template,
+    request,
+    url_for,
+)
+from flask_login import current_user, login_required
 
 admin_bp = Blueprint("admin_worker", __name__, template_folder="templates")
 
@@ -40,6 +51,7 @@ if not any(isinstance(h, logging.StreamHandler) for h in logger.handlers):
     sh.setLevel(logging.INFO)
     sh.setFormatter(formatter)  # 上で作った formatter を使うか再定義
     logger.addHandler(sh)
+
 
 def _stream_process_output_to_file_and_stdout(proc, logfile_path):
     """
@@ -92,9 +104,12 @@ def _stream_process_output_to_file_and_stdout(proc, logfile_path):
                         except Exception:
                             pass
                 except Exception:
-                    current_app.logger.exception("Error while flushing remaining output")
+                    current_app.logger.exception(
+                        "Error while flushing remaining output"
+                    )
     except Exception:
         current_app.logger.exception("_stream_process_output_to_file_and_stdout failed")
+
 
 def is_worker_running() -> bool:
     if not PID_FILE.exists():
@@ -131,7 +146,10 @@ def require_admin_or_abort():
         if getattr(current_user, "is_admin"):
             return
         else:
-            logger.warning("Forbidden: authenticated user not admin (user=%s)", getattr(current_user, "id", None))
+            logger.warning(
+                "Forbidden: authenticated user not admin (user=%s)",
+                getattr(current_user, "id", None),
+            )
             abort(403)
 
     # 2) Fallback: config or ENV list of admin usernames
@@ -143,7 +161,10 @@ def require_admin_or_abort():
         return
 
     # 3) No admin signal found -> forbid
-    logger.warning("Forbidden: no admin flag and username not in ADMIN_USERS (user=%s)", getattr(current_user, "username", None))
+    logger.warning(
+        "Forbidden: no admin flag and username not in ADMIN_USERS (user=%s)",
+        getattr(current_user, "username", None),
+    )
     abort(403)
 
 
@@ -174,20 +195,30 @@ def worker_settings():
         if action == "start_worker":
             if is_worker_running():
                 flash("Worker is already running.", "warning")
-                logger.info("start_worker attempted but worker already running (user=%s)", getattr(current_user, "id", None))
+                logger.info(
+                    "start_worker attempted but worker already running (user=%s)",
+                    getattr(current_user, "id", None),
+                )
                 return redirect(url_for(".worker_settings"))
 
             # confirm phrase check (extra human safety)
             if confirm_phrase != required_phrase:
                 flash("Confirmation phrase is incorrect.", "danger")
-                logger.warning("start_worker confirmation phrase mismatch (user=%s)", getattr(current_user, "id", None))
+                logger.warning(
+                    "start_worker confirmation phrase mismatch (user=%s)",
+                    getattr(current_user, "id", None),
+                )
                 return redirect(url_for(".worker_settings"))
 
             # Build command: same python executable
             cmd = [sys.executable, "worker.py", "--run-once", "--seed-test"]
 
             # Working directory: prefer app root_path if worker.py in package; otherwise cwd
-            cwd = current_app.root_path if (Path(current_app.root_path) / "worker.py").exists() else os.getcwd()
+            cwd = (
+                current_app.root_path
+                if (Path(current_app.root_path) / "worker.py").exists()
+                else os.getcwd()
+            )
 
             # Start detached process and log output
             try:
@@ -197,7 +228,7 @@ def worker_settings():
                     stdout=subprocess.PIPE,
                     stderr=subprocess.STDOUT,
                     cwd=cwd,
-                    env=os.environ.copy()
+                    env=os.environ.copy(),
                 )
                 # PID ファイルに書く
                 PID_FILE.write_text(str(proc.pid))
@@ -211,16 +242,28 @@ def worker_settings():
                 t.start()
 
                 flash(f"Worker started (pid {proc.pid}). Logs: {LOG_FILE}", "success")
-                logger.info("Worker started by user=%s pid=%s cmd=%s", getattr(current_user, "id", None), proc.pid, " ".join(cmd))
+                logger.info(
+                    "Worker started by user=%s pid=%s cmd=%s",
+                    getattr(current_user, "id", None),
+                    proc.pid,
+                    " ".join(cmd),
+                )
             except Exception as e:
                 flash(f"Failed to start worker: {e}", "danger")
-                logger.exception("Failed to start worker (user=%s): %s", getattr(current_user, "id", None), e)
+                logger.exception(
+                    "Failed to start worker (user=%s): %s",
+                    getattr(current_user, "id", None),
+                    e,
+                )
             return redirect(url_for(".worker_settings"))
 
         if action == "stop_worker":
             if not is_worker_running():
                 flash("No worker running.", "info")
-                logger.info("stop_worker called but no worker running (user=%s)", getattr(current_user, "id", None))
+                logger.info(
+                    "stop_worker called but no worker running (user=%s)",
+                    getattr(current_user, "id", None),
+                )
                 return redirect(url_for(".worker_settings"))
             try:
                 pid = int(PID_FILE.read_text().strip())
@@ -233,11 +276,25 @@ def worker_settings():
                 except Exception:
                     pass
                 flash("Worker stopped.", "success")
-                logger.info("Worker stopped by user=%s pid=%s", getattr(current_user, "id", None), pid)
+                logger.info(
+                    "Worker stopped by user=%s pid=%s",
+                    getattr(current_user, "id", None),
+                    pid,
+                )
             except Exception as e:
                 flash(f"Failed to stop worker: {e}", "danger")
-                logger.exception("Failed to stop worker (user=%s): %s", getattr(current_user, "id", None), e)
+                logger.exception(
+                    "Failed to stop worker (user=%s): %s",
+                    getattr(current_user, "id", None),
+                    e,
+                )
             return redirect(url_for(".worker_settings"))
 
     # Render GET: CSRF token injected via Flask-WTF; template should include {{ csrf_token() }}
-    return render_template("admin/worker_settings.html", status=status, pid=pid, log_file=str(LOG_FILE), required_phrase=current_app.config.get("WORKER_CONFIRM_PHRASE", "RUN_WORKER"))
+    return render_template(
+        "admin/worker_settings.html",
+        status=status,
+        pid=pid,
+        log_file=str(LOG_FILE),
+        required_phrase=current_app.config.get("WORKER_CONFIRM_PHRASE", "RUN_WORKER"),
+    )

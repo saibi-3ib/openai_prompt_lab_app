@@ -1,10 +1,13 @@
-from flask import render_template, redirect, url_for, request, flash, current_app
-from flask_login import login_user, logout_user, current_user, login_required
-from . import auth_bp
+from flask import flash, redirect, render_template, request, url_for
+from flask_login import current_user, login_required, login_user, logout_user
+from werkzeug.security import check_password_hash
+
 from ...extensions import db
+
 # Adjust import path of User to your models location; if using app/models.py:
 from ...models import User
-from werkzeug.security import check_password_hash
+from . import auth_bp
+
 
 @auth_bp.route("/login", methods=["GET", "POST"])
 def login():
@@ -22,6 +25,7 @@ def login():
             return redirect(next_page)
         flash("ユーザー名またはパスワードが無効です。", "error")
     return render_template("auth/login.html")
+
 
 @auth_bp.route("/logout")
 @login_required

@@ -9,11 +9,10 @@
 """
 
 from datetime import datetime
-from typing import Optional
 
-from werkzeug.security import generate_password_hash, check_password_hash
 from flask import current_app
 from flask_login import UserMixin
+from werkzeug.security import check_password_hash, generate_password_hash
 
 from app.extensions import db
 
@@ -65,14 +64,17 @@ class TargetAccount(db.Model):
     __tablename__ = "target_accounts"
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, nullable=False, index=True)
+    username = db.Column(db.String, nullable=False, unique=True, index=True)
     provider = db.Column(db.String(20), nullable=False, index=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
     added_at = db.Column(db.DateTime, default=_now)
 
     # relationship: one-to-many -> CollectedPost
     collected_posts = db.relationship(
-        "CollectedPost", back_populates="account", cascade="all, delete-orphan", lazy="select"
+        "CollectedPost",
+        back_populates="account",
+        cascade="all, delete-orphan",
+        lazy="select",
     )
 
     def __repr__(self) -> str:
@@ -109,7 +111,9 @@ class AnalysisResult(db.Model):
     __tablename__ = "analysis_results"
 
     id = db.Column(db.Integer, primary_key=True)
-    prompt_id = db.Column(db.Integer, db.ForeignKey("prompts.id"), nullable=False, index=True)
+    prompt_id = db.Column(
+        db.Integer, db.ForeignKey("prompts.id"), nullable=False, index=True
+    )
     raw_json_response = db.Column(db.Text, nullable=True)
     extracted_summary = db.Column(db.Text, nullable=True)
     analyzed_at = db.Column(db.DateTime, nullable=True)
@@ -119,7 +123,9 @@ class AnalysisResult(db.Model):
     output_tokens = db.Column(db.Integer, nullable=True)
     extracted_tickers = db.Column(db.String, nullable=True)
 
-    prompt = db.relationship("Prompt", backref=db.backref("analysis_results", lazy="select"))
+    prompt = db.relationship(
+        "Prompt", backref=db.backref("analysis_results", lazy="select")
+    )
 
     # many-to-many -> CollectedPost via association table analysis_posts_link
     analysis_posts_link_rows = db.relationship(
@@ -136,7 +142,9 @@ class AnalysisResult(db.Model):
         overlaps="analysis_posts_link_rows",
     )
 
-    ticker_sentiments = db.relationship("TickerSentiment", back_populates="analysis_result", lazy="select")
+    ticker_sentiments = db.relationship(
+        "TickerSentiment", back_populates="analysis_result", lazy="select"
+    )
 
     def __repr__(self) -> str:
         return f"<AnalysisResult id={self.id} prompt_id={self.prompt_id}>"
@@ -146,7 +154,9 @@ class CollectedPost(db.Model):
     __tablename__ = "collected_posts"
 
     id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String, db.ForeignKey("target_accounts.username"), nullable=False, index=True)
+    username = db.Column(
+        db.String, db.ForeignKey("target_accounts.username"), nullable=False, index=True
+    )
     post_id = db.Column(db.String, nullable=False, unique=True, index=True)
     original_text = db.Column(db.Text, nullable=False)
     source_url = db.Column(db.String, nullable=False)
@@ -157,7 +167,9 @@ class CollectedPost(db.Model):
     link_summary = db.Column(db.Text, nullable=True)
     created_at = db.Column(db.DateTime, default=_now)
 
-    account = db.relationship("TargetAccount", back_populates="collected_posts", lazy="joined")
+    account = db.relationship(
+        "TargetAccount", back_populates="collected_posts", lazy="joined"
+    )
     analysis_posts_link_rows = db.relationship(
         "AnalysisPostsLink",
         back_populates="collected_post",
@@ -172,7 +184,9 @@ class CollectedPost(db.Model):
         overlaps="analysis_posts_link_rows",
     )
 
-    ticker_sentiments = db.relationship("TickerSentiment", back_populates="collected_post", lazy="select")
+    ticker_sentiments = db.relationship(
+        "TickerSentiment", back_populates="collected_post", lazy="select"
+    )
 
     def __repr__(self) -> str:
         return f"<CollectedPost id={self.id} post_id={self.post_id} username={self.username}>"
@@ -185,8 +199,15 @@ class UserTickerWeight(db.Model):
     )
 
     id = db.Column(db.Integer, primary_key=True)
-    account_id = db.Column(db.Integer, db.ForeignKey("target_accounts.id"), nullable=False, index=True)
-    ticker = db.Column(db.String(10), db.ForeignKey("stock_ticker_map.ticker"), nullable=False, index=True)
+    account_id = db.Column(
+        db.Integer, db.ForeignKey("target_accounts.id"), nullable=False, index=True
+    )
+    ticker = db.Column(
+        db.String(10),
+        db.ForeignKey("stock_ticker_map.ticker"),
+        nullable=False,
+        index=True,
+    )
     total_mentions = db.Column(db.Integer, nullable=False, default=0)
     weight_ratio = db.Column(db.Float, nullable=False, default=0.0)
     last_analyzed_at = db.Column(db.DateTime, nullable=True)
@@ -201,8 +222,12 @@ class UserTickerWeight(db.Model):
 class AnalysisPostsLink(db.Model):
     __tablename__ = "analysis_posts_link"
 
-    analysis_result_id = db.Column(db.Integer, db.ForeignKey("analysis_results.id"), primary_key=True)
-    collected_post_id = db.Column(db.Integer, db.ForeignKey("collected_posts.id"), primary_key=True)
+    analysis_result_id = db.Column(
+        db.Integer, db.ForeignKey("analysis_results.id"), primary_key=True
+    )
+    collected_post_id = db.Column(
+        db.Integer, db.ForeignKey("collected_posts.id"), primary_key=True
+    )
 
     analysis_result = db.relationship(
         "AnalysisResult",
@@ -223,14 +248,27 @@ class TickerSentiment(db.Model):
     __tablename__ = "ticker_sentiment"
 
     id = db.Column(db.Integer, primary_key=True)
-    analysis_result_id = db.Column(db.Integer, db.ForeignKey("analysis_results.id"), nullable=False, index=True)
-    collected_post_id = db.Column(db.Integer, db.ForeignKey("collected_posts.id"), nullable=False, index=True)
-    ticker = db.Column(db.String(10), db.ForeignKey("stock_ticker_map.ticker"), nullable=False, index=True)
+    analysis_result_id = db.Column(
+        db.Integer, db.ForeignKey("analysis_results.id"), nullable=False, index=True
+    )
+    collected_post_id = db.Column(
+        db.Integer, db.ForeignKey("collected_posts.id"), nullable=False, index=True
+    )
+    ticker = db.Column(
+        db.String(10),
+        db.ForeignKey("stock_ticker_map.ticker"),
+        nullable=False,
+        index=True,
+    )
     sentiment = db.Column(db.String(10), nullable=False)
     reasoning = db.Column(db.Text, nullable=True)
 
-    analysis_result = db.relationship("AnalysisResult", back_populates="ticker_sentiments", lazy="joined")
-    collected_post = db.relationship("CollectedPost", back_populates="ticker_sentiments", lazy="joined")
+    analysis_result = db.relationship(
+        "AnalysisResult", back_populates="ticker_sentiments", lazy="joined"
+    )
+    collected_post = db.relationship(
+        "CollectedPost", back_populates="ticker_sentiments", lazy="joined"
+    )
     ticker_map = db.relationship("StockTickerMap", lazy="joined")
 
     def __repr__(self) -> str:

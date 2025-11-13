@@ -1,7 +1,18 @@
 import os
+
 from flask import Flask, current_app
+
 from .config import config_by_name
-from .extensions import db, migrate, login_manager, csrf, talisman, limiter, server_session
+from .extensions import (
+    csrf,
+    db,
+    limiter,
+    login_manager,
+    migrate,
+    server_session,
+    talisman,
+)
+
 
 def create_app(config_name=None):
     if config_name is None:
@@ -25,6 +36,7 @@ def create_app(config_name=None):
         try:
             # import here to avoid circular imports
             from .models import User
+
             # SQLAlchemy 2.0: use Session.get
             return db.session.get(User, int(user_id))
         except Exception:
@@ -37,6 +49,7 @@ def create_app(config_name=None):
     # Server-side sessions (optional)
     if app.config.get("SESSION_TYPE") == "redis":
         from redis import Redis
+
         redis_client = Redis.from_url(app.config.get("SESSION_REDIS_URL"))
         app.config["SESSION_REDIS"] = redis_client
         server_session.init_app(app)
@@ -45,30 +58,37 @@ def create_app(config_name=None):
         server_session.init_app(app)
 
     # Talisman (CSP) - respects DISABLE_FORCE_HTTPS flag
-    talisman.init_app(app, content_security_policy=app.config.get("CSP", None),
-                      force_https=not app.config.get("DISABLE_FORCE_HTTPS", False))
+    talisman.init_app(
+        app,
+        content_security_policy=app.config.get("CSP", None),
+        force_https=not app.config.get("DISABLE_FORCE_HTTPS", False),
+    )
 
     # Blueprint registration hooks: import if present; avoid hard failure
     try:
         from .blueprints.auth import auth_bp
+
         app.register_blueprint(auth_bp)
     except Exception as e:
         app.logger.exception("auth blueprint import failed: %s", e)
 
     try:
         from .blueprints.main import main_bp
+
         app.register_blueprint(main_bp)
     except Exception as e:
         app.logger.exception("main blueprint import failed: %s", e)
 
     try:
         from .blueprints.api import api_bp
+
         app.register_blueprint(api_bp, url_prefix="/api")
     except Exception as e:
         app.logger.exception("api blueprint import failed: %s", e)
 
     try:
         from .blueprints.admin import admin_bp
+
         app.register_blueprint(admin_bp, url_prefix="/admin")
     except Exception as e:
         app.logger.exception("admin blueprint import failed: %s", e)

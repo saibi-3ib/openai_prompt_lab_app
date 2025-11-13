@@ -1,18 +1,18 @@
-"""chore(alembic): merge heads ad758695d0ba and 20251109_add_indexes_collectedpost
+"""chore(alembic): merge heads 20251111_add_is_admin and d1f2c3b4a5e6
 
-Revision ID: 9675e53be358
-Revises: ad758695d0ba, 20251109_add_indexes_collectedpost
-Create Date: 2025-11-10 17:04:55.110922
+Revision ID: b67fcfa1b407
+Revises: 20251111_add_is_admin, d1f2c3b4a5e6
+Create Date: 2025-11-13 13:46:48.823292
 
 """
 
 from typing import Sequence, Union
 
 # revision identifiers, used by Alembic.
-revision: str = "9675e53be358"
+revision: str = "b67fcfa1b407"
 down_revision: Union[str, Sequence[str], None] = (
-    "ad758695d0ba",
-    "20251109_add_indexes_collectedpost",
+    "20251111_add_is_admin",
+    "d1f2c3b4a5e6",
 )
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
