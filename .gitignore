@@ -29,3 +29,15 @@ instance/
 *.sqlite3
 *.db
 instance/
+
+# Ignore local artifacts
+/dev.db
+dev.db
+/flask_session/
+flask_session/
+/instance/
+instance/
+.venv
+venv/
+__pycache__/
+*.pyc
