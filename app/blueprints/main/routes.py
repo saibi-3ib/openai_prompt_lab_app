@@ -73,3 +73,28 @@ def history():
     except Exception:
         results = []
     return render_template("history.html", results=results)
+
+
+@main_bp.route("/_debug_login_manager")
+def _debug_login_manager():
+    from flask import current_app
+
+    from app import extensions as ext
+
+    info = {
+        "current_app_repr": repr(current_app._get_current_object()),
+        "hasattr_login_manager_on_current_app": hasattr(
+            current_app._get_current_object(), "login_manager"
+        ),
+        "current_app_login_manager_is_ext": getattr(
+            current_app._get_current_object(), "login_manager", None
+        )
+        is getattr(ext, "login_manager", None),
+        "ext_login_manager_repr": repr(getattr(ext, "login_manager", None)),
+        "current_app_login_manager_repr": repr(
+            getattr(current_app._get_current_object(), "login_manager", None)
+        ),
+    }
+    # Log for server console as well
+    current_app.logger.info("_debug_login_manager: %s", info)
+    return info
