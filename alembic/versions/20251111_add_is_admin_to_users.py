@@ -1,11 +1,12 @@
 """add is_admin to users
 
 Revision ID: 20251111_add_is_admin
-Revises: 9675e53be358
+Revises: <PREV_REVISION_ID>
 Create Date: 2025-11-11 00:00:00.000000
 """
 
 import sqlalchemy as sa
+from sqlalchemy import inspect
 
 from alembic import op
 
@@ -16,41 +17,28 @@ branch_labels = None
 depends_on = None
 
 
-def _has_column(conn, table_name: str, column_name: str) -> bool:
-    """Return True if column_name exists on table_name for the given connection."""
-    inspector = sa.inspect(conn)
-    cols = [c["name"] for c in inspector.get_columns(table_name)]
-    return column_name in cols
-
-
 def upgrade():
-    bind = op.get_bind()
-    # Only add column if it doesn't already exist (idempotent)
-    if not _has_column(bind, "users", "is_admin"):
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    cols = [c["name"] for c in inspector.get_columns("users")]
+    if "is_admin" not in cols:
+        # server_default を用いて既存行に false をセット
         op.add_column(
             "users",
             sa.Column(
-                "is_admin",
-                sa.Boolean(),
-                nullable=False,
-                server_default=sa.text("0"),
+                "is_admin", sa.Boolean(), nullable=False, server_default=sa.false()
             ),
         )
-        # Remove server_default after backfilling if you prefer (best-effort; may be ignored on some backends)
-        try:
-            op.alter_column(
-                "users", "is_admin", existing_type=sa.Boolean(), server_default=None
-            )
-        except Exception:
-            # Some backends (or older Alembic/SQLite setups) may not support altering defaults; ignore.
-            pass
+        # 必要ならサーバデフォルトを解除（オプション）
+        op.alter_column("users", "is_admin", server_default=None)
+    else:
+        # 既に存在する場合は何もしない（冪等化）
+        pass
 
 
 def downgrade():
-    bind = op.get_bind()
-    if _has_column(bind, "users", "is_admin"):
-        try:
-            op.drop_column("users", "is_admin")
-        except Exception:
-            # On SQLite dropping columns may not be supported without a table rebuild; ignore for downgrade safety.
-            pass
+    conn = op.get_bind()
+    inspector = inspect(conn)
+    cols = [c["name"] for c in inspector.get_columns("users")]
+    if "is_admin" in cols:
+        op.drop_column("users", "is_admin")
