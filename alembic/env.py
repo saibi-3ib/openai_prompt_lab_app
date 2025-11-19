@@ -1,109 +1,151 @@
+import glob
 import os
+import re
 import sys
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, pool, text
 
 from alembic import context
 
-# --- ▼▼▼【以下を追加】▼▼▼ ---
-import os
-from dotenv import load_dotenv
-# models.py の Base をインポート (パスを調整する必要があるかもしれません)
-# Assuming models.py is in the parent directory of 'alembic'
-import sys
-sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), '..')))
-from models import Base, DATABASE_URL # DATABASE_URL もインポート
-# --- ▲▲▲【追加ここまで】▲▲▲ ---
+# プロジェクトルートをパスに追加してプロジェクト内モジュールを import できるようにする
+sys.path.insert(0, os.path.realpath(os.path.join(os.path.dirname(__file__), "..")))
 
-# プロジェクトのルートディレクトリをsys.pathに追加
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from models import Base  # ここでmodels.pyのBaseをインポート
-from dotenv import load_dotenv
+# target metadata（models の Base）を安全に取得する
+target_metadata = None
+MODELS_DATABASE_URL = None
+try:
+    # models 内で DB_URL を提供している場合に備えて取得を試みる（失敗しても続行）
+    from models import Base as _Base  # type: ignore
 
-load_dotenv()
+    target_metadata = _Base.metadata
+    try:
+        from models import DATABASE_URL as _MODELS_DB_URL  # type: ignore
 
-# プロジェクトのルートディレクトリへの絶対パスを取得
-BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-#.envファイルからデータベースURLを取得、もしくはデフォルトの'app.db'を使用
-DB_NAME = os.environ.get("DB_FILENAME", "app.db")
-# 絶対パスのデータベースURLを構築
-DYNAMIC_DATABASE_URL = f"sqlite:///{os.path.join(BASE_DIR, DB_NAME)}"
-print(f"--- [alembic/env.py] Connecting to database at: {DYNAMIC_DATABASE_URL} ---") # デバッグ用出力
+        MODELS_DATABASE_URL = _MODELS_DB_URL
+    except Exception:
+        MODELS_DATABASE_URL = None
+except Exception:
+    target_metadata = None
+    MODELS_DATABASE_URL = None
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
-config = context.config
+# 環境変数優先で DB URL を決定（PG_DSN を最優先、次に DATABASE_URL、最後に models の値）
+env_db_dsn = os.environ.get("PG_DSN") or os.environ.get("DATABASE_URL")
+if env_db_dsn:
+    db_url = env_db_dsn
+else:
+    db_url = MODELS_DATABASE_URL
 
-# --- ▼▼▼【ここを修正】▼▼▼ ---
-# Read DATABASE_URL directly from the imported models module
-# instead of relying solely on alembic.ini's load_dotenv setting.
-db_url = DATABASE_URL
 if not db_url:
-    raise ValueError("DATABASE_URL could not be imported from models.py. Check models.py and .env setup.")
-# Explicitly set the sqlalchemy.url for Alembic using the imported URL
-config.set_main_option('sqlalchemy.url', db_url)
-print(f"--- [alembic/env.py] Using DATABASE_URL from models: {db_url} ---") # デバッグ用出力追加
-# --- ▲▲▲【修正ここまで】▲▲▲ ---
+    raise RuntimeError(
+        "DATABASE_URL/PG_DSN is not set in environment and models.DATABASE_URL is not available. "
+        "Set DATABASE_URL or PG_DSN env var for alembic to run migrations."
+    )
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+
+# 事前チェック: DB に保存されている alembic_version とローカルの alembic/versions を比較して、
+# DB に存在するがローカルに該当ファイルがない rev があれば早期にわかりやすくエラーにする。
+def _local_revisions(versions_dir=None):
+    if versions_dir is None:
+        versions_dir = os.path.join(os.path.dirname(__file__), "versions")
+    revs = set()
+    for path in glob.glob(os.path.join(versions_dir, "*.py")):
+        try:
+            s = open(path, "r", encoding="utf-8").read()
+        except Exception:
+            continue
+        m = re.search(r"revision\s*=\s*['\"]([^'\"]+)['\"]", s)
+        if m:
+            revs.add(m.group(1))
+    return revs
+
+
+def _db_revisions(url):
+    try:
+        eng = create_engine(url)
+        with eng.connect() as conn:
+            # alembic_version テーブルが存在しない場合は空セットを返す
+            try:
+                rows = conn.execute(
+                    text("SELECT version_num FROM alembic_version")
+                ).fetchall()
+                return set(r[0] for r in rows if r and r[0])
+            except Exception:
+                return set()
+    except Exception:
+        # DB へ接続できない場合は None を返して上位で対処
+        return None
+
+
+_local_revs = _local_revisions()
+_db_revs = _db_revisions(db_url)
+
+if _db_revs is None:
+    # DB に接続できない（または接続時に問題があった）場合は、詳細を示すエラーにする
+    raise RuntimeError(
+        "Could not connect to database using the resolved URL. "
+        "Ensure the environment variable PG_DSN or DATABASE_URL is set and reachable from this process. "
+        "Resolved DB URL (masked) shown via masked printing in your shell for safety."
+    )
+
+# DB にあるがローカルに存在しないリビジョンを検出したら、わかりやすく止める
+_missing = sorted([r for r in _db_revs if r and r not in _local_revs])
+if _missing:
+    # ユーザーが次にとるべき代表的な解決法を示す（プレースホルダ作成 or baseline + stamp）
+    raise RuntimeError(
+        "The database's alembic_version contains revision(s) that are not present in this repository: "
+        f"{_missing}\n\n"
+        "This typically happens when the database was migrated with a different set of migration files, "
+        "or when migration files have been removed from the repo. Choose one of the following remediation steps:\n\n"
+        "1) Restore the missing migration files into alembic/versions/ so that Alembic can build the revision map.\n\n"
+        "2) If you intentionally want to treat the current DB schema as the canonical baseline and discard old migrations, "
+        "create a single baseline revision file (no-op) in alembic/versions and then run on the target environment:\n"
+        "   alembic stamp <baseline_revision_id>\n\n"
+        "   Example placeholder baseline file contents (create as alembic/versions/<REV>_baseline.py):\n\n"
+        '   """baseline: adopt current DB schema as starting point\n\n'
+        "   Revision ID: <REV>\n"
+        "   Revises:\n"
+        "   Create Date: 2025-11-XX XX:XX:XX\n"
+        '   """\n'
+        "   from alembic import op\n"
+        "   import sqlalchemy as sa\n\n"
+        "   revision = '<REV>'\n"
+        "   down_revision = None\n"
+        "   branch_labels = None\n"
+        "   depends_on = None\n\n"
+        "   def upgrade():\n"
+        "       pass\n\n"
+        "   def downgrade():\n"
+        "       pass\n\n"
+        "3) Alternatively create simple placeholder (no-op) migration files named like <MISSING_REV>_placeholder.py "
+        "under alembic/versions for each missing revision id (this will satisfy Alembic's revision map). Example of a "
+        "placeholder file:\n\n"
+        "   revision = '<MISSING_REV>'\n"
+        "   down_revision = None\n\n"
+        "Perform these fixes in your repository (or create a local branch with the placeholder files), then re-run "
+        "the alembic command.\n"
+    )
+
+# alembic の設定に DB URL を注入
+config = context.config
+config.set_main_option("sqlalchemy.url", db_url)
+
+# ロギング設定
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# for SQLAlchemy 2.0 models, Metadata is available via Base.metadata
-target_metadata = Base.metadata
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
-
-
-def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-    # ... (docstring) ...
-    """
-    # url = config.get_main_option("sqlalchemy.url") # <-- 元の行をコメントアウトまたは削除
-    context.configure(
-        # --- ▼▼▼【ここを修正】▼▼▼ ---
-        url=DATABASE_URL, # <-- インポートした DATABASE_URL を直接使う
-        # --- ▲▲▲【修正ここまで】▲▲▲ ---
-        target_metadata=target_metadata,
-        literal_binds=True,
-        dialect_opts={"paramstyle": "named"},
-    )
-
-    with context.begin_transaction():
-        context.run_migrations()
-
-def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-    # ... (docstring) ...
-    """
-    # --- ▼▼▼【ここの engine 作成部分を修正】▼▼▼ ---
-    # connectable = engine_from_config(
-    #     config.get_section(config.config_ini_section, {}),
-    #     prefix="sqlalchemy.",
-    #     poolclass=pool.NullPool,
-    # ) # <-- 元の engine_from_config をコメントアウトまたは削除
-
-    # --- 代わりに、インポートした DATABASE_URL を使って直接 engine を作成 ---
-    connectable = create_engine(DATABASE_URL, poolclass=pool.NullPool)
-    # --- ▲▲▲【修正ここまで】▲▲▲ ---
-
-
+def run_migrations_online():
+    connectable = create_engine(db_url, poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
-        )
-
+        context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
 
+
 if context.is_offline_mode():
-    run_migrations_offline()
+    context.configure(url=db_url, target_metadata=target_metadata, literal_binds=True)
+    with context.begin_transaction():
+        context.run_migrations()
 else:
     run_migrations_online()

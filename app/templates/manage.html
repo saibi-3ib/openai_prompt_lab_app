@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="ja">
+<head><meta charset="utf-8"><title>Manage</title></head>
+<body>
+  <a href="{{ url_for('main.index') }}">Home</a>
+  <h1>管理 (manage)</h1>
+  {% if settings %}
+    <ul>{% for k,v in settings %}<li>{{ k }} = {{ v }}</li>{% endfor %}</ul>
+  {% else %}
+    <p>設定情報はありません。</p>
+  {% endif %}
+</body>
+</html>

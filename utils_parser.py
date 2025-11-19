@@ -1,15 +1,14 @@
 # utils_parser.py
 
-import re
-import os
-import sys
 import argparse
 import hashlib
 import logging
-from logging.handlers import RotatingFileHandler
+import os
+import re
+import sys
 from datetime import datetime, timedelta, timezone
-from typing import List, Set, Tuple, Dict
-
+from logging.handlers import RotatingFileHandler
+from typing import Dict, List, Set, Tuple
 
 # ============================================================
 # Logging Configuration
@@ -24,14 +23,18 @@ logger = logging.getLogger(__name__)
 if not logger.handlers:
     # Console handler
     console_handler = logging.StreamHandler()
-    console_formatter = logging.Formatter("[%(levelname)s] %(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S")
+    console_formatter = logging.Formatter(
+        "[%(levelname)s] %(asctime)s - %(message)s", "%Y-%m-%d %H:%M:%S"
+    )
     console_handler.setFormatter(console_formatter)
 
     # File handler with rotation
-    file_handler = RotatingFileHandler(LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8")
+    file_handler = RotatingFileHandler(
+        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+    )
     file_formatter = logging.Formatter(
         "%(asctime)s [%(levelname)s] %(name)s:%(lineno)d - %(message)s",
-        "%Y-%m-%d %H:%M:%S"
+        "%Y-%m-%d %H:%M:%S",
     )
     file_handler.setFormatter(file_formatter)
 
@@ -51,10 +54,9 @@ JST = timezone(timedelta(hours=9))  # Japan Standard Time (UTC+9)
 # Main Parsing Function
 # ============================================================
 
+
 def parse_threads_data_from_lines(
-    lines: List[str],
-    processed_ids_set: Set[str],
-    verbose: bool = False
+    lines: List[str], processed_ids_set: Set[str], verbose: bool = False
 ) -> Tuple[List[Dict], int]:
     """
     Parses raw text lines copied from a Threads profile page and extracts structured post data.
@@ -96,16 +98,17 @@ def parse_threads_data_from_lines(
         logger.info("Detected username: %s", username)
 
     # --- 2. Find timestamp lines marking posts ---
-    timestamp_indices = [
-        i for i, line in enumerate(lines)
-        if is_timestamp_line(line)
-    ]
+    timestamp_indices = [i for i, line in enumerate(lines) if is_timestamp_line(line)]
     logger.debug("Detected %d timestamp markers.", len(timestamp_indices))
 
     # --- 3. Extract each post block ---
     for idx, ts_i in enumerate(timestamp_indices):
         start = ts_i + 1
-        end = timestamp_indices[idx + 1] if idx + 1 < len(timestamp_indices) else len(lines)
+        end = (
+            timestamp_indices[idx + 1]
+            if idx + 1 < len(timestamp_indices)
+            else len(lines)
+        )
         post_block_lines = lines[start:end]
 
         raw_text = clean_post_text(post_block_lines)
@@ -129,7 +132,7 @@ def parse_threads_data_from_lines(
             "post_id": post_id,
             "source_url": "",
             "like_count": 0,
-            "retweet_count": 0
+            "retweet_count": 0,
         }
 
         parsed_posts_data.append(post_dict)
@@ -150,6 +153,7 @@ def parse_threads_data_from_lines(
 # ============================================================
 # Helper Functions
 # ============================================================
+
 
 def detect_username(lines: List[str]) -> str:
     """Detects the Threads username (e.g., 'npr' or 'stockstoearn')."""
@@ -237,12 +241,17 @@ def generate_pseudo_id(username: str, timestamp: str, text_snippet: str) -> str:
 # CLI Entry Point for Testing
 # ============================================================
 
+
 def _run_cli():
     parser = argparse.ArgumentParser(
         description="Parse raw Threads profile text files into structured post data."
     )
     parser.add_argument("file", help="Path to the text file exported from Threads")
-    parser.add_argument("--verbose", action="store_true", help="Enable detailed debug logging for this run")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Enable detailed debug logging for this run",
+    )
 
     args = parser.parse_args()
 
@@ -259,7 +268,7 @@ def _run_cli():
     print(f"\n✅ Parsed {count} new posts from '{args.file}'")
     print(f"🧩 Detected username: {posts[0]['username'] if posts else '(none)'}")
     print(f"🪵 Logs saved to: {LOG_FILE}")
-    print(f"💾 Output sample (first 1–2 posts):\n")
+    print("💾 Output sample (first 1–2 posts):\n")
     for p in posts[:2]:
         print(f"- [{p['posted_at']}] {p['original_text'][:100]}...")
     print()
