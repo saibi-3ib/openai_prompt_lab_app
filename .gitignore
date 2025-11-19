@@ -20,3 +20,4 @@ admin_actions.log
 logs/worker_run.log
 *.bak
 cookies.txt
+flask_session/
